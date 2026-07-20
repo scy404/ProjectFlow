@@ -4,13 +4,16 @@ set -eu
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 COMMAND="${1:-}"
 if [ -z "$COMMAND" ]; then
-  echo '{"event":"validation_error","exitCode":3,"error":"缺少命令"}'
-  exit 3
+  # No args: emit a machine-readable command catalog. Issue #100 §3.3
+  # requires the CLI to be discoverable by shell Coding Agents.
+  # Output is stable JSON so agents can parse it without LLM parsing.
+  printf '%s\n' '{"event":"commands","commands":{"list":"list all scenarios","validate":"validate evaluation config","run":"run evaluation","show":"show run report","status":"poll run status","verify":"verify artifact integrity","exit-gate":"run exit gate checks","reliability":"compute reliability stats","compare":"compare candidate vs baseline","diagnose":"diagnose trusted failure","repair-packet":"produce repair packet","rca-benchmark":"run RCA benchmark","fault-catalog":"list fault profiles","calibrate":"run governed calibration","standard-conflicts":"list standard conflicts","promote-standard":"apply promotion approval","active-registry":"list active standards","candidate-registry":"list candidate standards","conflict-catalog":"list conflict patterns","golden-core":"verify golden core","showcase":"export/verify portable showcase bundle","viewer":"start loopback-only local viewer","preview":"run live preview subset","retention":"build retention report","agent-acceptance":"run agent-acceptance harness for codex/claude-code/trae-equivalent shell agent profiles"}}'
+  exit 0
 fi
 shift
 
 case "$COMMAND" in
-  list|validate|run|show|status|verify|exit-gate|reliability|compare|diagnose|repair-packet|rca-benchmark|fault-catalog|calibrate|standard-conflicts|promote-standard|active-registry|candidate-registry|conflict-catalog|golden-core) ;;
+  list|validate|run|show|status|verify|exit-gate|reliability|compare|diagnose|repair-packet|rca-benchmark|fault-catalog|calibrate|standard-conflicts|promote-standard|active-registry|candidate-registry|conflict-catalog|golden-core|showcase|viewer|preview|retention|agent-acceptance) ;;
   *)
     echo '{"event":"validation_error","exitCode":3,"error":"未知命令"}'
     exit 3

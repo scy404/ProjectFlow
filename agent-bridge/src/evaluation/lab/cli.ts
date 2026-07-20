@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { existsSync, writeSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { EvaluationArtifactStore } from "./artifact-store.js";
 import { EVALUATION_SCHEMA_VERSION } from "./contract.js";
@@ -65,6 +65,25 @@ import type {
   CalibrationCostLedger,
 } from "./calibration-contract.js";
 import type { CostLedgerEntry } from "./contract.js";
+// T46-7 (Issue #100) — showcase, viewer, preview, retention, agent acceptance.
+import { verifyAndMigrateArtifact } from "./schema-migration.js";
+import {
+  buildShowcaseBundle,
+  verifyShowcaseBundle,
+  showcaseRetentionDir,
+} from "./showcase-bundle.js";
+import { startLocalViewer } from "./local-viewer.js";
+import {
+  runLivePreview,
+} from "./live-preview.js";
+import {
+  buildRetentionReport,
+  publishRetentionReport,
+} from "./retention-planner.js";
+import {
+  runAgentAcceptance,
+  publishAgentAcceptanceReport,
+} from "./agent-acceptance.js";
 
 const EXIT = {
   passed: 0,
@@ -162,6 +181,12 @@ function usage(): void {
       "conflict-catalog": "scripts/eval-lab conflict-catalog [--json]",
       // T46-6 (Issue #99) — Golden Core freeze, verify, coverage, list.
       "golden-core": "scripts/eval-lab golden-core <freeze|verify|coverage|list|candidates> [--json]",
+      // T46-7 (Issue #100) — showcase, viewer, preview, retention, agent acceptance.
+      "showcase": "scripts/eval-lab showcase <export|verify> <run-id|bundle-path> [--json]",
+      "viewer": "scripts/eval-lab viewer start <run-id> [--port <port>] [--json]",
+      "preview": "scripts/eval-lab preview [--model mock:mock-model] [--json]",
+      "retention": "scripts/eval-lab retention [--publish] [--json]",
+      "agent-acceptance": "scripts/eval-lab agent-acceptance --profile <codex|claude-code|trae-equivalent|all> [--publish] [--json]",
     },
     exitCodes: EXIT,
   });
@@ -1247,6 +1272,252 @@ async function main(): Promise<void> {
     throw new EvaluationValidationError(
       `golden-core 未知子命令: ${subcommand}; 支持: freeze | verify | coverage | list | candidates`,
     );
+  }
+
+  // -------------------------------------------------------------------------
+  // T46-7 (Issue #100) — showcase, viewer, preview, retention, agent-acceptance.
+  // -------------------------------------------------------------------------
+
+  if (command === "showcase") {
+    const subcommand = args[0];
+    if (subcommand === "export") {
+      const runId = args[1];
+      if (!runId) {
+        throw new EvaluationValidationError("showcase export 需要 <run-id>");
+      }
+      const json = parsedArgsHasFlag(args, "--json");
+      const store = await verifiedStore(projectRoot, runId);
+      const verified = await verifyAndMigrateArtifact(store.runDir, runId);
+      const { bundle, bundlePath, bundleSha256 } = await buildShowcaseBundle({
+        verified,
+        projectRoot,
+      });
+      if (json) {
+        output({
+          event: "showcase_exported",
+          bundleId: bundle.bundleId,
+          bundlePath,
+          bundleSha256,
+          integritySha256: bundle.integritySha256,
+          releaseVerdict: bundle.releaseVerdict.verdict,
+          honestBaseline: bundle.releaseVerdict.honestBaseline,
+          exitCode: EXIT.passed,
+        });
+      } else {
+        process.stdout.write(
+          `Showcase Bundle: ${bundle.bundleId}\n` +
+          `  path: ${bundlePath}\n` +
+          `  verdict: ${bundle.releaseVerdict.verdict}\n` +
+          `  baseline: ${bundle.releaseVerdict.honestBaseline}\n` +
+          `  integrity: ${bundle.integritySha256}\n`,
+        );
+      }
+      process.exit(EXIT.passed);
+      return;
+    }
+    if (subcommand === "verify") {
+      const bundlePath = args[1];
+      if (!bundlePath) {
+        throw new EvaluationValidationError("showcase verify 需要 <bundle-path>");
+      }
+      const json = parsedArgsHasFlag(args, "--json");
+      const bundle = await verifyShowcaseBundle(bundlePath);
+      if (json) {
+        output({
+          event: "showcase_verified",
+          bundleId: bundle.bundleId,
+          integritySha256: bundle.integritySha256,
+          verdict: bundle.releaseVerdict.verdict,
+          exitCode: EXIT.passed,
+        });
+      } else {
+        process.stdout.write(
+          `Showcase Bundle Verified: ${bundle.bundleId}\n` +
+          `  verdict: ${bundle.releaseVerdict.verdict}\n` +
+          `  baseline: ${bundle.releaseVerdict.honestBaseline}\n` +
+          `  integrity: ${bundle.integritySha256}\n`,
+        );
+      }
+      process.exit(EXIT.passed);
+      return;
+    }
+    throw new EvaluationValidationError(
+      `showcase 未知子命令: ${subcommand}; 支持: export | verify`,
+    );
+  }
+
+  if (command === "viewer") {
+    const subcommand = args[0];
+    if (subcommand === "start") {
+      const runId = args[1];
+      if (!runId) {
+        throw new EvaluationValidationError("viewer start 需要 <run-id>");
+      }
+      const json = parsedArgsHasFlag(args, "--json");
+      let port = 0;
+      const portIdx = args.indexOf("--port");
+      if (portIdx >= 0 && args[portIdx + 1]) {
+        port = parseInt(args[portIdx + 1]!, 10);
+        if (!Number.isFinite(port) || port < 0 || port > 65535) {
+          throw new EvaluationValidationError(`--port 非法: ${args[portIdx + 1]}`);
+        }
+      }
+      const store = await verifiedStore(projectRoot, runId);
+      const verified = await verifyAndMigrateArtifact(store.runDir, runId);
+      const handle = await startLocalViewer({
+        verified,
+        projectRoot,
+        port,
+      });
+      if (json) {
+        output({
+          event: "viewer_started",
+          runId,
+          host: handle.host,
+          port: handle.port,
+          url: handle.url,
+          readOnly: true,
+          loopbackOnly: true,
+          exitCode: EXIT.passed,
+        });
+      } else {
+        process.stdout.write(
+          `Local Viewer Started (loopback-only, read-only)\n` +
+          `  url: ${handle.url}\n` +
+          `  host: ${handle.host}\n` +
+          `  port: ${handle.port}\n` +
+          `  Press Ctrl+C to stop.\n`,
+        );
+      }
+      // Keep the process alive until Ctrl+C.
+      process.on("SIGINT", () => {
+        handle.close().finally(() => process.exit(EXIT.passed));
+      });
+      // Keep the event loop alive.
+      await new Promise<void>(() => { /* blocks until SIGINT */ });
+      return;
+    }
+    throw new EvaluationValidationError(
+      `viewer 未知子命令: ${subcommand}; 支持: start`,
+    );
+  }
+
+  if (command === "preview") {
+    const json = parsedArgsHasFlag(args, "--json");
+    const modelIdx = args.indexOf("--model");
+    const model = modelIdx >= 0 && args[modelIdx + 1] ? args[modelIdx + 1]! : "mock:mock-model";
+    const result = await runLivePreview({
+      projectRoot,
+      model,
+    });
+    if (json) {
+      output({
+        event: "preview_completed",
+        runId: result.runId,
+        runDir: result.runDir,
+        status: result.status,
+        labelPath: result.labelPath,
+        integrityRootSha256: result.integrityRootSha256,
+        durationMs: result.durationMs,
+        sutCost: result.sutCost,
+        evaluatorModelCost: result.evaluatorModelCost,
+        codingAgentCost: result.codingAgentCost,
+        modelIsMock: result.modelIsMock,
+        remainingGates: result.remainingGates,
+        preview: true,
+        exitCode: result.status === "regression" ? EXIT.regression : EXIT.passed,
+      });
+    } else {
+      process.stdout.write(
+        `Live Preview Completed\n` +
+        `  runId: ${result.runId}\n` +
+        `  runDir: ${result.runDir}\n` +
+        `  status: ${result.status}\n` +
+        `  duration: ${result.durationMs}ms\n` +
+        `  sutCost: $${result.sutCost.amountUsd ?? 0}\n` +
+        `  modelIsMock: ${result.modelIsMock}\n` +
+        `  remainingGates: ${result.remainingGates.length > 0 ? result.remainingGates.join(", ") : "none"}\n`,
+      );
+    }
+    process.exit(result.status === "regression" ? EXIT.regression : EXIT.passed);
+    return;
+  }
+
+  if (command === "retention") {
+    const json = parsedArgsHasFlag(args, "--json");
+    const publish = parsedArgsHasFlag(args, "--publish");
+    const report = await buildRetentionReport({ projectRoot });
+    let reportPath: string | null = null;
+    if (publish) {
+      reportPath = join(showcaseRetentionDir(projectRoot), `retention_${report.generatedAt.replace(/[^0-9]/g, "").slice(0, 14)}.json`);
+      await publishRetentionReport(report, reportPath);
+    }
+    if (json) {
+      output({
+        event: "retention_report_built",
+        report,
+        reportPath,
+        exitCode: EXIT.passed,
+      });
+    } else {
+      process.stdout.write(
+        `Retention Report\n` +
+        `  generatedAt: ${report.generatedAt}\n` +
+        `  runs: ${report.runCount} (preserved=${report.preservedRunCount}, eligible=${report.eligibleRunCount})\n` +
+        `  bundles: ${report.bundleCount}\n` +
+        `  totalRunSize: ${(report.totalRunSizeBytes / 1024 / 1024).toFixed(2)} MB\n` +
+        `  totalBundleSize: ${(report.totalBundleSizeBytes / 1024).toFixed(2)} KB\n` +
+        `  autoDeletionPerformed: ${report.autoDeletionPerformed}\n` +
+        (reportPath ? `  reportPath: ${reportPath}\n` : ""),
+      );
+    }
+    process.exit(EXIT.passed);
+    return;
+  }
+
+  if (command === "agent-acceptance") {
+    const profileIdx = args.indexOf("--profile");
+    const profile = profileIdx >= 0 && args[profileIdx + 1] ? args[profileIdx + 1]! : "all";
+    if (!["codex", "claude-code", "trae-equivalent", "all"].includes(profile)) {
+      throw new EvaluationValidationError(`--profile 非法: ${profile}; 支持: codex | claude-code | trae-equivalent | all`);
+    }
+    const json = parsedArgsHasFlag(args, "--json");
+    const publish = parsedArgsHasFlag(args, "--publish");
+    const results = await runAgentAcceptance({
+      projectRoot,
+      profile: profile as "codex" | "claude-code" | "trae-equivalent" | "all",
+    });
+    let reportPath: string | null = null;
+    if (publish) {
+      const timestamp = results[0]?.startedAt.replace(/[^0-9]/g, "").slice(0, 14) ?? Date.now().toString();
+      reportPath = join(showcaseRetentionDir(projectRoot), `agent_acceptance_${timestamp}.json`);
+      await publishAgentAcceptanceReport(results, reportPath);
+    }
+    const allPassed = results.every((r) => r.passed);
+    if (json) {
+      output({
+        event: "agent_acceptance_completed",
+        results,
+        reportPath,
+        allPassed,
+        exitCode: allPassed ? EXIT.passed : EXIT.regression,
+      });
+    } else {
+      process.stdout.write(
+        `Agent Acceptance\n` +
+        `  profiles: ${results.length}\n` +
+        `  allPassed: ${allPassed}\n` +
+        (reportPath ? `  reportPath: ${reportPath}\n` : ""),
+      );
+      for (const r of results) {
+        const passCount = r.steps.filter((s) => s.passed).length;
+        process.stdout.write(
+          `  - ${r.displayName}: ${passCount}/${r.steps.length} steps passed (overall=${r.passed})\n`,
+        );
+      }
+    }
+    process.exit(allPassed ? EXIT.passed : EXIT.regression);
+    return;
   }
 
   if (command !== "run") {

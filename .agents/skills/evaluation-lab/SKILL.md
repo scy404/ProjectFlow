@@ -94,6 +94,24 @@ scripts/eval-lab golden-core candidates --json
 
 `GOLDEN_CORE_DEFAULT_FROZEN_AT = "2026-07-20T00:00:00.000Z"` 保证 in-memory registry fingerprint 跨构建确定性；`computeRegistryFingerprint` 包含 `candidates`/`rejected`/`freezeNotes` 字段防止篡改。每个 stateful scenario 声明 9 项 trusted entry conditions（goalProvenance、fixtureSeed+fixtureFingerprint、goldenConstraintsSummary、referenceProgramId、declaredGraderMutations、mutationDetectionEvidence、scope、stateEffectSummary、milestoneDagSummary）。P0 不可移除集合 8 类（safety-authority、privacy-visibility、proposal-confirm、idempotency、forbidden-side-effects、terminal-consistency、read-only-purity、hidden-field-leakage）；`verifyP0ScopeFilter` 阻止 `--scenario`/`--exclude` 静默移除 P0 场景。6 类 robustness variants（semantic-paraphrase、distraction-injection、description-weakening、irrelevant-context、order-variation、bounded-adversarial-wording）不膨胀 canonical count。Generated regression candidates 必须 pass 8 项验证（representativeness、redaction、hiddenGoalIntegrity、nonDuplicationWithCanonical、fixtureSolvability、graderMutationDeclaration、reviewableDiff、explicitApprovalRecord）才能通过 `applyPromotionApproval` 推广；无 Agent 或普通命令可 auto-promote。`validation.ts` 强制 `unknownSideEffects="fail_closed"` 时必须声明非空 `allowedSideEffectTypes`，否则 grader 静默 skip（fail-open）。Hard deterministic gates 永远优先；grader 不调用 SUT 业务实现；fixture/goal/oracle/Reference Program/grader mutation 逻辑独立。本 ticket 不做跨 Slice 全面审查；不执行 Issue #100 的 Dashboard/viewer 工作；不执行 active-standard promotion；不调用付费模型。
 
+Slice 5 (Issue #100) 的 evidence-backed showcase 与 T46 closeout 路径：两个只读展示面消费同一 immutable result graph——`showcase export` 产出 portable committed redacted showcase bundle（bundle-scoped pseudonyms、redaction of raw IDs/paths/secrets/hidden prompts/raw traces、atomic hard-link publish、`chmod 0o400`）；`viewer start` 产出 loopback-only（`127.0.0.1`/`::1`）HTTP 只读 viewer（POST/PUT/DELETE/PATCH → 405、mutation query params → 400）；`preview` 使用 smoke SUT 上限 `$0.10`、`preview_` runId 前缀、`preview_label.json` 标记、付费模型 4 项门禁 fail-closed、`skipToolchainValidation` 跳过 Node 版本检查；`retention` 产出 zero-deletion V1 retention report（11 类 preserve reasons、不自动删除）；`agent-acceptance` 为 3 个 shell agent profile（codex/claude-code/trae-equivalent）各运行 7 步确定性 CLI 命令映射（discover/validate/run/status/verify/show/repair-packet），harness 永不调用真实 LLM agent，所有运行使用 `mock:mock-model`。
+
+```bash
+# Slice 5 (Issue #100) — Showcase, viewer, preview, retention, agent acceptance
+scripts/eval-lab showcase export <run-id> --json
+scripts/eval-lab showcase verify <bundle-path>
+scripts/eval-lab viewer start <run-id> [--port <port>] --json
+scripts/eval-lab preview --model mock:mock-model --json
+scripts/eval-lab retention --json
+scripts/eval-lab retention --publish --json
+scripts/eval-lab agent-acceptance --profile codex --json
+scripts/eval-lab agent-acceptance --profile claude-code --json
+scripts/eval-lab agent-acceptance --profile trae-equivalent --json
+scripts/eval-lab agent-acceptance --profile all --json
+```
+
+`showcase export` 原子发布 bundle 到 `agent-bridge/showcase/bundles/<bundleId>.json`，写入 `.source.json` sidecar 到 `agent-bridge/showcase/bundle-sources/` 记录 RAW source runId（不进入 portable bundle）；`releaseVerdict` 与 `honestBaseline` 如实报告原始 run 的 pass/fail 状态，不弱化 grader 或改写 Golden truth。`showcase verify` 校验 bundle integrity hash 匹配与 redaction 完整。`viewer start` 绑定 loopback，`GET /` HTML 首页、`GET /api/viewer` JSON bundle、`GET /health`、`GET /artifact`、`GET /bundle`。`preview` 记录真实 `durationMs`（不 sleep、不 fake latency），`remainingGates` 为空表示 mock 模型全部门禁通过。`retention` 标记 11 类 preserve reasons（`status_failed`、`status_needs_review`、`status_partial_budget`、`contains_repair_packet`、`contains_diagnosis`、`contains_counterfactual`、`contains_calibration_artifact`、`contains_promotion_approval`、`referenced_by_showcase_bundle`、`is_promoted_baseline`、`preview_run`），V1 policy `v1-no-deletion` 不自动删除。`agent-acceptance` 通过 `execFileSync("bash", [scriptPath, ...command])` 执行每个命令，验证 expected JSON fields 存在（支持 event-stream 多行 JSON，取 union）；`allPassed: true` 当且仅当所有 profile 的所有步骤通过。Coding Agent 自身费用不计入 ProjectFlow Agent 的 `$0.10` smoke/preview 上限；若外部费用不可测，保持 `unknown`，不得伪报为 `$0.00`。
+
 ## 退出码
 
 - `0`：通过

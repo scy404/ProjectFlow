@@ -322,6 +322,38 @@ The `golden-core` preset reuses `full`'s SUT `$1` cap with an independent evalua
 
 Key files: `agent-bridge/src/evaluation/lab/golden-core-contract.ts`, `golden-core-registry.ts`, `golden-core-scenarios.ts`, `golden-core-coverage.ts`, `golden-core-candidates.ts`, `golden-core-variants.ts`, `golden-core-presets.ts`, plus V6 additive extensions to `validation.ts` and `cli.ts`. See `docs/T46/ProjectFlow_Agent_Evaluation_Lab_Slice4_Handoff.md` for the full trust model and closure evidence.
 
+### T46 Evaluation Lab Slice 5 Evidence-Backed Showcase & Closeout (#100, local commit on glm/t46-100-showcase-closeout)
+
+Issue #100 is implemented on `glm/t46-100-showcase-closeout` (local commit, not pushed/merged/closed). It ships two read-only presentation surfaces that consume the same immutable result graph: a portable committed redacted showcase bundle (`showcase export`) and a loopback-only local read viewer (`viewer start`). `preview` runs a live smoke-bounded preview with `preview_` runId prefix, `$0.10` SUT ceiling, `preview_label.json` marker, and 4 paid-model fail-closed gates. `retention` produces a zero-deletion V1 planning report with 11 preserve reasons. `agent-acceptance` runs 3 shell agent profiles (codex/claude-code/trae-equivalent) × 7 deterministic CLI steps (discover/validate/run/status/verify/show/repair-packet), simulating agents via `execFileSync` without invoking real LLMs. The honest Golden Core baseline 30/52 is preserved in showcase bundles without weakening graders.
+
+```bash
+# Export a portable redacted showcase bundle from a completed run
+scripts/eval-lab showcase export <run-id> --json
+
+# Verify a showcase bundle's integrity and redaction
+scripts/eval-lab showcase verify <bundle-path>
+
+# Start the loopback-only local read viewer (binds 127.0.0.1/::1 only)
+scripts/eval-lab viewer start <run-id> [--port <port>] --json
+
+# Run a live preview with smoke SUT ceiling ($0.10) and preview_ runId prefix
+scripts/eval-lab preview --model mock:mock-model --json
+
+# Generate a read-only retention planning report (zero-deletion V1)
+scripts/eval-lab retention --json
+scripts/eval-lab retention --publish --json
+
+# Run Agent-first acceptance for 3 shell agent profiles
+scripts/eval-lab agent-acceptance --profile codex --json
+scripts/eval-lab agent-acceptance --profile claude-code --json
+scripts/eval-lab agent-acceptance --profile trae-equivalent --json
+scripts/eval-lab agent-acceptance --profile all --json
+```
+
+`showcase export` atomically publishes the bundle to `agent-bridge/showcase/bundles/<bundleId>.json` via hard-link (EEXIST → fail-closed), then `chmod 0o400`. Bundle-scoped pseudonyms (`pseudo_<sha8>`) are not stable across bundles; each bundle uses an independent salt. Raw IDs, absolute paths, secrets, hidden prompts and raw traces are redacted to `<redacted:kind>`. `releaseVerdict` and `honestBaseline` report the original run's pass/fail status faithfully. `viewer start` binds to `127.0.0.1`/`::1` only; POST/PUT/DELETE/PATCH return 405 and mutation query params return 400. `preview` records honest `durationMs` (no sleep inflation), skips toolchain validation (Node version check), and fails-closed on paid models until frozen pricing and pre-call worst-case cost estimates exist. `retention` marks 11 preserve reasons (`status_failed`, `status_needs_review`, `status_partial_budget`, `contains_repair_packet`, `contains_diagnosis`, `contains_counterfactual`, `contains_calibration_artifact`, `contains_promotion_approval`, `referenced_by_showcase_bundle`, `is_promoted_baseline`, `preview_run`); V1 policy is `v1-no-deletion` (no auto-cleanup). `agent-acceptance` verifies expected JSON fields per step and exits `0` only when all profiles pass.
+
+Key files: `agent-bridge/src/evaluation/lab/schema-migration.ts`, `showcase-bundle.ts`, `local-viewer.ts`, `live-preview.ts`, `retention-planner.ts`, `agent-acceptance.ts`, plus additive extensions to `cli.ts`, `validation.ts` (`skipToolchainValidation` option), `runner.ts` (passthrough), `package.json` (5 eval scripts), `scripts/eval-lab` (command allowlist), and `.gitignore` (`agent-bridge/showcase/`). Test file: `t46-7-showcase-closeout.test.ts` (101 tests). See `docs/T46/ProjectFlow_Agent_Evaluation_Lab_Slice5_Handoff.md` for the full trust model, T46 closeout status, and verification evidence.
+
 ### Conversation history smoke test
 
 With a valid project member ID, verify the T45 lifecycle without exposing another member's transcript:

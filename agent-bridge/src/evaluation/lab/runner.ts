@@ -81,6 +81,10 @@ export interface RunEvaluationOptions {
     status: "started" | "completed",
     result?: { observation: ScenarioObservation; grade: Grade },
   ) => void;
+  /** Skip toolchain validation (Node version, python venv, tsx).
+   *  Used by live preview to avoid failing on env-specific toolchain
+   *  mismatches. Defaults to false. */
+  skipToolchainValidation?: boolean;
 }
 
 function knownZeroCost(source: CostLedgerEntry["source"] = "versioned_price_estimate"): CostLedgerEntry {
@@ -639,6 +643,7 @@ export async function runEvaluation(options: RunEvaluationOptions): Promise<Eval
     scenarios: options.scenarios,
     budget: options.budget,
     preset: options.preset,
+    skipToolchainValidation: options.skipToolchainValidation,
   });
   if (!validation.valid) {
     throw new EvaluationValidationError(JSON.stringify(validation));

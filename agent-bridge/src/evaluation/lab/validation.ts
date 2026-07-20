@@ -715,6 +715,11 @@ export async function validateEvaluationConfig(options: {
   /** Optional calibrate budget (required when preset="calibrate").
    *  Validates the independent evaluator ceiling and SUT cap. */
   calibrateBudget?: CalibrateBudget;
+  /** When true, skip toolchain validation (Node version, python venv,
+   *  tsx). Used by live preview to avoid failing on env-specific
+   *  toolchain mismatches that are orthogonal to the preview's
+   *  correctness. Defaults to false. */
+  skipToolchainValidation?: boolean;
 }): Promise<ValidationResult> {
   const scenarioErrors = options.scenarios.flatMap(validateScenario);
   const duplicateIds = options.scenarios
@@ -739,7 +744,7 @@ export async function validateEvaluationConfig(options: {
     }
   }
   const modelErrors = await validateModel(options.projectRoot, options.model);
-  const toolchainErrors = await validateToolchain(options.projectRoot);
+  const toolchainErrors = options.skipToolchainValidation ? [] : await validateToolchain(options.projectRoot);
   const errors = [
     ...scenarioErrors,
     ...budgetErrors,
