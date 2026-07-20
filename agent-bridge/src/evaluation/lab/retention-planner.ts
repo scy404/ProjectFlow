@@ -189,12 +189,14 @@ export async function buildRetentionReport(
 
   // §3.1 Discover all committed showcase bundles. We need this list
   //      first so we can mark runs referenced by them as preserve.
-  const bundleEntries = await discoverBundles(bundlesDir, generatedAt);
-  // §3.1.1 Read local-only sidecar files to recover the RAW source
-  //        runId for each bundle. The bundle itself only carries a
-  //        pseudonymized runId; the sidecar is the local bookkeeping
-  //        that lets the retention planner mark source runs without
-  //        reverse-mapping pseudonyms.
+  // §3.1.1 Read local-only sidecar files FIRST to recover the RAW
+  //        source runId for each bundle. The bundle itself only
+  //        carries a pseudonymized runId; the sidecar is the local
+  //        bookkeeping that lets the retention planner mark source
+  //        runs without reverse-mapping pseudonyms AND lets each
+  //        bundle entry expose its real sourceRunId. Without this
+  //        pass, RetentionBundleEntry.sourceRunId would always be
+  //        null — an honesty bug that hides the bundle→run linkage.
   const sidecars = await discoverBundleSidecars(sourcesDir);
   const referencedRunIds = new Set<string>();
   for (const sidecar of sidecars) {
@@ -202,6 +204,7 @@ export async function buildRetentionReport(
       referencedRunIds.add(sidecar.sourceRunId);
     }
   }
+  const bundleEntries = await discoverBundles(bundlesDir, generatedAt, sidecars);
 
   // §3.2 Discover all run directories.
   const runEntries = await discoverRuns(artifactsDir, generatedAt, referencedRunIds);
@@ -485,8 +488,15 @@ function buildRunSummary(
 async function discoverBundles(
   bundlesDir: string,
   _generatedAt: string,
+  sidecars: BundleSourceSidecar[],
 ): Promise<RetentionBundleEntry[]> {
   if (!existsSync(bundlesDir)) return [];
+  // Index sidecars by bundleId so each bundle entry can recover its
+  // RAW source runId. The portable bundle only carries a pseudonymized
+  // runId; the sidecar is the local bookkeeping that lets the
+  // retention planner report the real sourceRunId honestly.
+  const sidecarByBundleId = new Map<string, BundleSourceSidecar>();
+  for (const sidecar of sidecars) sidecarByBundleId.set(sidecar.bundleId, sidecar);
   const entries = await readdir(bundlesDir, { withFileTypes: true });
   const bundles: RetentionBundleEntry[] = [];
   for (const entry of entries) {
@@ -494,14 +504,18 @@ async function discoverBundles(
     if (!entry.name.endsWith(".json")) continue;
     if (entry.name.startsWith(".")) continue;
     const bundlePath = join(bundlesDir, entry.name);
-    const bundleEntry = await analyzeBundleFile(entry.name, bundlePath);
+    const bundleEntry = await analyzeBundleFile(entry.name, bundlePath, sidecarByBundleId);
     bundles.push(bundleEntry);
   }
   bundles.sort((a, b) => a.bundleId.localeCompare(b.bundleId));
   return bundles;
 }
 
-async function analyzeBundleFile(fileName: string, bundlePath: string): Promise<RetentionBundleEntry> {
+async function analyzeBundleFile(
+  fileName: string,
+  bundlePath: string,
+  sidecarByBundleId: Map<string, BundleSourceSidecar>,
+): Promise<RetentionBundleEntry> {
   const stats = await stat(bundlePath);
   let bundle: ShowcaseBundle | null = null;
   try {
@@ -517,9 +531,9 @@ async function analyzeBundleFile(fileName: string, bundlePath: string): Promise<
   // file in `agent-bridge/showcase/bundle-sources/<bundleId>.source.json`.
   // When the sidecar is missing (e.g., the bundle was copied in from
   // another machine), we cannot determine the source runId and
-  // mark it as `null`. The run will not be marked as
-  // `referenced_by_showcase_bundle` in that case — this is honest.
-  const sourceRunId = null;
+  // mark it as `null` — this is honest.
+  const sidecar = bundleId ? sidecarByBundleId.get(bundleId) : undefined;
+  const sourceRunId = sidecar?.sourceRunId ?? null;
   const summary = `保留 showcase bundle ${bundleId} (size=${(stats.size / 1024).toFixed(1)}KB, sourceRun=${sourceRunId ?? "unknown"})`;
   return {
     bundleId,

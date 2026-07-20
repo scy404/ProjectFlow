@@ -1428,13 +1428,20 @@ async function main(): Promise<void> {
         exitCode: result.status === "regression" ? EXIT.regression : EXIT.passed,
       });
     } else {
+      // Issue #100 §3.2 honesty invariant: unknown cost MUST NOT be
+      // displayed as $0. The JSON output above already preserves the
+      // full `sutCost` object (including `amountUsd: null`); this
+      // text-mode display must match that truthfulness.
+      const sutCostDisplay = result.sutCost.amountUsd === null
+        ? "unknown"
+        : `$${result.sutCost.amountUsd}`;
       process.stdout.write(
         `Live Preview Completed\n` +
         `  runId: ${result.runId}\n` +
         `  runDir: ${result.runDir}\n` +
         `  status: ${result.status}\n` +
         `  duration: ${result.durationMs}ms\n` +
-        `  sutCost: $${result.sutCost.amountUsd ?? 0}\n` +
+        `  sutCost: ${sutCostDisplay}\n` +
         `  modelIsMock: ${result.modelIsMock}\n` +
         `  remainingGates: ${result.remainingGates.length > 0 ? result.remainingGates.join(", ") : "none"}\n`,
       );

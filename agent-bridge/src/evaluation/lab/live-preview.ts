@@ -326,12 +326,24 @@ export async function runLivePreview(options: LivePreviewOptions): Promise<LiveP
 
   // §6.6 Return the result. Costs come straight from the artifact
   //      summary — no recomputation.
+  // Issue #100 §3.3 honesty invariant: `integrityRootSha256` is the
+  // root of trust for the published artifact. Coercing a missing root
+  // to an empty string would silently publish a fake root that
+  // downstream consumers (viewer, showcase bundle, retention planner)
+  // would treat as a real SHA-256. Fail-closed instead — a successful
+  // run MUST produce a non-empty integrity root, and if it did not,
+  // something is seriously wrong with the artifact store.
+  if (!artifact.integrityRootSha256 || artifact.integrityRootSha256.length === 0) {
+    throw new EvaluationInfrastructureError(
+      `live preview artifact 缺少 integrityRootSha256; 拒绝用空字符串冒充 SHA-256 根 (runId=${runId})`,
+    );
+  }
   return {
     runId,
     runDir: store.runDir,
     status: artifact.status,
     labelPath,
-    integrityRootSha256: artifact.integrityRootSha256 ?? "",
+    integrityRootSha256: artifact.integrityRootSha256,
     artifactPaths: artifact.artifactPaths,
     durationMs,
     sutCost: artifact.summary.sutCost,

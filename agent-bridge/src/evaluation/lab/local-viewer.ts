@@ -496,10 +496,19 @@ function renderHtmlOverview(payload: ViewerPayload): string {
   <p>Observations: ${payload.localDrillDown.observationCount} · Grades: ${payload.localDrillDown.gradeCount}</p>
   <table>
     <tr><th>Scenario ID</th><th>Terminal</th><th>Latency (ms)</th><th>Requests</th><th>Input Tokens</th><th>Output Tokens</th><th>Grade</th></tr>
-    ${payload.localDrillDown.observations.map((obs, i) => {
-      const grade = payload.localDrillDown.grades[i];
-      return `<tr><td>${escape(obs.scenarioId)}</td><td>${escape(obs.terminalStatus)}</td><td>${obs.latencyMs}</td><td>${obs.requestCount}</td><td>${obs.inputTokens}</td><td>${obs.outputTokens}</td><td>${grade?.passed ? "✅" : "❌"}</td></tr>`;
-    }).join("\n    ")}
+    ${(() => {
+      // Build a Map keyed by scenarioId so the grade lookup does NOT
+      // depend on observations and grades being in the same order or
+      // 1:1. Issue #100 §3.2: the viewer must render the same verdict
+      // as the portable bundle — index-based lookup would silently
+      // show the wrong grade if the orders ever diverged.
+      const gradeMap = new Map<string, { scenarioId: string; passed: boolean; failures: string[] }>();
+      for (const g of payload.localDrillDown.grades) gradeMap.set(g.scenarioId, g);
+      return payload.localDrillDown.observations.map((obs) => {
+        const grade = gradeMap.get(obs.scenarioId);
+        return `<tr><td>${escape(obs.scenarioId)}</td><td>${escape(obs.terminalStatus)}</td><td>${obs.latencyMs}</td><td>${obs.requestCount}</td><td>${obs.inputTokens}</td><td>${obs.outputTokens}</td><td>${grade?.passed ? "✅" : "❌"}</td></tr>`;
+      }).join("\n    ");
+    })()}
   </table>
 
   <h2>Portable Bundle Fingerprint</h2>

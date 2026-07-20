@@ -332,6 +332,7 @@ async function runSingleProfile(
   //      repair-packet) substitute into their command templates.
   const steps: AcceptanceStepResult[] = [];
   let runId: string | null = null;
+  let runDir: string | null = null;
   let runReportPath: string | null = null;
   let repairPacketPath: string | null = null;
 
@@ -365,28 +366,63 @@ async function runSingleProfile(
       }
       // The run step's JSON output may be a sequence of events; look
       // for the `run_completed` event which carries `runId` and
-      // `artifactPaths`.
+      // `artifactPaths`. The CLI emits `artifactPaths` as an OBJECT
+      // {runDirectory, manifest, report, integrity}, NOT an array.
       if (!runId) {
         const lines = stepResult.stdout.split("\n").filter((l) => l.trim().startsWith("{"));
         for (const line of lines) {
           const event = tryParseJson(line);
           if (event && typeof event.runId === "string" && event.event === "run_completed") {
             runId = event.runId;
-            if (Array.isArray(event.artifactPaths) && event.artifactPaths.length > 0) {
-              runReportPath = event.artifactPaths[0];
+            const paths = event.artifactPaths;
+            if (paths && typeof paths === "object" && !Array.isArray(paths)) {
+              const ap = paths as Record<string, unknown>;
+              if (typeof ap.report === "string") runReportPath = ap.report;
+              if (typeof ap.runDirectory === "string") runDir = ap.runDirectory;
             }
             break;
           }
         }
+      } else if (parsed) {
+        // runId came from the top-level object; still try to recover
+        // artifactPaths from the same object (some CLI commands emit
+        // a single JSON object instead of an event stream).
+        const paths = (parsed as Record<string, unknown>).artifactPaths;
+        if (paths && typeof paths === "object" && !Array.isArray(paths)) {
+          const ap = paths as Record<string, unknown>;
+          if (typeof ap.report === "string") runReportPath = ap.report;
+          if (typeof ap.runDirectory === "string") runDir = ap.runDirectory;
+        }
       }
     }
     // Capture repair packet path from the `repair-packet` step.
+    // The repair-packet CLI emits either:
+    //   { event: "repair_packets_list", runId, packetIds: string[] }
+    //   { event: "repair_packet_prompt", runId, packetId, ... }
+    // The repair packet file lives at <runDir>/repair-packets/<packetId>.json.
     if (mapping.naturalLanguage === "produce repair packet" && stepResult.passed) {
       const lines = stepResult.stdout.split("\n").filter((l) => l.trim().startsWith("{"));
       for (const line of lines) {
         const event = tryParseJson(line);
-        if (event && Array.isArray(event.artifactPaths) && event.artifactPaths.length > 0) {
-          repairPacketPath = event.artifactPaths[0];
+        if (!event) continue;
+        let packetId: string | null = null;
+        if (event.event === "repair_packets_list"
+            && Array.isArray(event.packetIds)
+            && event.packetIds.length > 0
+            && typeof event.packetIds[0] === "string") {
+          packetId = event.packetIds[0];
+        } else if (event.event === "repair_packet_prompt"
+                   && typeof event.packetId === "string") {
+          packetId = event.packetId;
+        }
+        if (packetId) {
+          if (runDir) {
+            repairPacketPath = join(runDir, "repair-packets", `${packetId}.json`);
+          } else {
+            // Fall back to the canonical artifacts path layout when
+            // the run_completed event did not carry runDirectory.
+            repairPacketPath = join("agent-bridge", "artifacts", runId ?? "unknown", "repair-packets", `${packetId}.json`);
+          }
           break;
         }
       }
@@ -496,7 +532,14 @@ async function executeStep(
         jsonFieldsMissing.length = 0;
         jsonFieldsMissing.push(...stillMissing);
         if (stillMissing.length === 0) {
-          // Union covers all expected fields — accept.
+          // Union covers all expected fields — accept and update
+          // `jsonFieldsPresent` so the reported "present" fields
+          // reflect the union, not just one line's fields. Without
+          // this update, `jsonFieldsPresent` would underreport the
+          // fields actually present in the output, producing a
+          // misleading step record even though the step passed.
+          jsonFieldsPresent.length = 0;
+          jsonFieldsPresent.push(...mapping.expectedJsonFields.filter((f) => unionFields.has(f)));
         }
       }
     }
