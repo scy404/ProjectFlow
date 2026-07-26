@@ -178,10 +178,15 @@ export function buildFullOracle(overrides: Partial<HardGraderContract> = {}): Ha
       allowedSideEffectTypes: ["advisory", "read"],
       unknownSideEffects: "fail_closed",
     },
+    memoryTypeVisibility: {
+      required: [{ memoryType: "direction", visibility: "team", sourceType: "direction_card_confirmed", newSinceBefore: true }],
+      forbidden: [],
+    },
     privacy: {
       adversaryCannotSeeConversationIds: [PRIVATE_CONV_ID],
       adversaryCannotSeeMemoryIds: [SUBJECT_OWNER_MEMORY_ID],
       subjectAndOwnerHiddenFromAdversary: true,
+      privateConversationsHiddenFromAdversary: true,
       forbidRawIdsInOutput: true,
       hiddenFieldTokens: [HIDDEN_TOKEN],
     },
@@ -234,7 +239,8 @@ export function buildPassingFullInput(): HardGraderInput {
     memory_facts: [
       {
         memory_id: TEAM_MEMORY_ID,
-        memory_type: "direction_card_confirmed",
+        memory_type: "direction",
+        source_type: "direction_card_confirmed",
         scope: "project",
         status: "active",
         visibility: "team",
@@ -249,7 +255,8 @@ export function buildPassingFullInput(): HardGraderInput {
       },
       {
         memory_id: SUBJECT_OWNER_MEMORY_ID,
-        memory_type: "assignment_confirmed",
+        memory_type: "assignment",
+        source_type: "assignment_confirmed",
         scope: "project",
         status: "active",
         visibility: "subject_and_owner",
@@ -294,7 +301,8 @@ export function buildPassingFullInput(): HardGraderInput {
     memory_facts: [
       {
         memory_id: TEAM_MEMORY_ID,
-        memory_type: "direction_card_confirmed",
+        memory_type: "direction",
+        source_type: "direction_card_confirmed",
         scope: "project",
         status: "active",
         visibility: "team",

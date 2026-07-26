@@ -6,6 +6,10 @@
  * 2. Fetching fresh workspace state (GET /api/workspaces/{id}/state)
  * 3. Creating a new conversation (POST /api/projects/{id}/agent-conversations)
  *
+ * T46-100 S4: Also supports evaluator-owned fixture contract execution
+ * (e.g., pre-seeding a pending replan proposal) via the internal evaluation
+ * fixture API.
+ *
  * Each call returns a fresh {@link PublicSeamIdentity} so that effectful
  * scenarios cannot collide across repetitions.
  *
@@ -14,6 +18,7 @@
  */
 
 import type { PublicSeamIdentity } from "./http-public-seam-runner.js";
+import type { FixtureContract } from "./lab/fixture-contracts.js";
 
 export interface FixtureProvisionerConfig {
   backendBaseUrl: string;
@@ -144,4 +149,64 @@ export async function provisionObservationFixture(
     viewerUserId: config.viewerUserId,
     workspaceState,
   };
+}
+
+// ---------------------------------------------------------------------------
+// T46-100 S4: Evaluator-owned fixture contract execution
+// ---------------------------------------------------------------------------
+
+export interface FixtureExecutionConfig {
+  backendBaseUrl: string;
+  internalServiceToken: string;
+  evaluationNonce: string;
+  evaluationInstanceId: string;
+  fetchFn?: typeof fetch;
+}
+
+/**
+ * Execute a fixture contract against the isolated backend.
+ *
+ * Each step in the fixture contract is executed sequentially through
+ * the evaluation-only internal fixture API. Steps that fail or return
+ * unexpected results cause the entire execution to fail-closed.
+ *
+ * @throws Error with redacted message on failure.
+ */
+export async function executeFixtureContract(
+  config: FixtureExecutionConfig,
+  contract: FixtureContract,
+): Promise<void> {
+  const fetchFn = config.fetchFn ?? fetch;
+  const base = config.backendBaseUrl.replace(/\/$/, "");
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${config.internalServiceToken}`,
+    "X-Evaluation-Nonce": config.evaluationNonce,
+    "X-Evaluation-Instance-Id": config.evaluationInstanceId,
+    "Content-Type": "application/json",
+  };
+
+  for (const step of contract.steps) {
+    switch (step.operation) {
+      case "pre_seed_pending_replan": {
+        const response = await fetchFn(
+          `${base}/internal/evaluation/fixture/seed-replan`,
+          {
+            method: "POST",
+            headers,
+            body: JSON.stringify(step.params),
+          },
+        );
+        if (!response.ok) {
+          throw new Error(`评测夹具预置失败: HTTP ${response.status}`);
+        }
+        const body = (await response.json()) as { proposal_id?: string; status?: string };
+        if (!body.proposal_id || body.status !== "pending") {
+          throw new Error("评测夹具预置验证失败: 提案状态不符合预期");
+        }
+        break;
+      }
+      default:
+        throw new Error(`未知的夹具操作: ${step.operation}`);
+    }
+  }
 }

@@ -363,7 +363,7 @@ const projectPlanningSkillContract: SkillEvaluationContract = {
   positiveTriggerPrompt: "根据当前项目生成阶段计划草案",
   negativeTriggerPrompts: ["当前项目进展如何？"],
   prerequisites: ["has_direction_card"],
-  allowedTools: ["generate_stage_plan_proposal", "get_project_state"],
+  allowedTools: ["generate_stage_plan_proposal", "get_workspace_state"],
   requiredSteps: [
     { kind: "tool", value: "generate_stage_plan_proposal" },
     { kind: "event", value: "agent.completed" },
@@ -384,9 +384,9 @@ const projectStatusSkillContract: SkillEvaluationContract = {
   positiveTriggerPrompt: "当前项目进展如何？",
   negativeTriggerPrompts: ["根据当前项目生成阶段计划草案"],
   prerequisites: [],
-  allowedTools: ["get_project_state", "get_workspace_state"],
+  allowedTools: ["get_workspace_state"],
   requiredSteps: [
-    { kind: "tool", value: "get_project_state" },
+    { kind: "tool", value: "get_workspace_state" },
     { kind: "event", value: "agent.completed" },
   ],
   forbiddenActions: ["generate_stage_plan_proposal"],
@@ -479,8 +479,8 @@ const runtimeDuplicateTerminalScenario: ScenarioContract = {
     prompt: "请回答当前项目状态。",
   },
   hidden: {
-    expectedMode: "action",
-    expectedSkill: "project-status",
+    expectedMode: "answer",
+    expectedSkill: "project-read",
     requiredEvidence: [],
     maxLatencyMs: 30_000,
     tokenBudget: { maxInputTokens: 30_000, maxOutputTokens: 4_000 },
@@ -502,15 +502,17 @@ const runtimeDuplicateTerminalScenario: ScenarioContract = {
 function runtimeFaultScenario(
   faultId: string,
   scenarioId: string,
+  opts?: { readOnlyPrompt?: boolean },
 ): ScenarioContract {
   const checkpoint = faultId === "fault-checkpoint-resume";
+  const readOnly = opts?.readOnlyPrompt ?? false;
   return {
     schemaVersion: 1,
     scenarioId,
     visible: { prompt: checkpoint ? "根据当前项目生成阶段计划草案" : "请回答当前项目状态。" },
     hidden: {
-      expectedMode: "action",
-      expectedSkill: checkpoint ? "project-planning" : "project-status",
+      expectedMode: readOnly ? "answer" : "action",
+      expectedSkill: checkpoint ? "project-planning" : (readOnly ? "project-read" : "project-status"),
       requiredEvidence: checkpoint ? ["generate_stage_plan_proposal"] : [],
       maxLatencyMs: faultId === "fault-timeout" ? 1_000 : 30_000,
       tokenBudget: { maxInputTokens: 30_000, maxOutputTokens: 4_000 },
@@ -539,14 +541,14 @@ function runtimeFaultScenario(
 
 const remainingRuntimeFaultScenarios: ScenarioContract[] = [
   runtimeFaultScenario("fault-timeout", "runtime-fault-timeout-p0"),
-  runtimeFaultScenario("fault-infra-retry", "runtime-fault-infrastructure-retry-p0"),
-  runtimeFaultScenario("fault-agent-retry", "runtime-fault-agent-retry-p0"),
-  runtimeFaultScenario("fault-invalid-args", "runtime-fault-invalid-arguments-p0"),
-  runtimeFaultScenario("fault-partial-results", "runtime-fault-partial-results-p0"),
+  runtimeFaultScenario("fault-infra-retry", "runtime-fault-infrastructure-retry-p0", { readOnlyPrompt: true }),
+  runtimeFaultScenario("fault-agent-retry", "runtime-fault-agent-retry-p0", { readOnlyPrompt: true }),
+  runtimeFaultScenario("fault-invalid-args", "runtime-fault-invalid-arguments-p0", { readOnlyPrompt: true }),
+  runtimeFaultScenario("fault-partial-results", "runtime-fault-partial-results-p0", { readOnlyPrompt: true }),
   runtimeFaultScenario("fault-checkpoint-resume", "runtime-fault-checkpoint-resume-p0"),
-  runtimeFaultScenario("fault-steering", "runtime-fault-steering-p0"),
-  runtimeFaultScenario("fault-idempotency", "runtime-fault-idempotency-p0"),
-  runtimeFaultScenario("fault-contradictory-terminal", "runtime-fault-contradictory-terminal-p0"),
+  runtimeFaultScenario("fault-steering", "runtime-fault-steering-p0", { readOnlyPrompt: true }),
+  runtimeFaultScenario("fault-idempotency", "runtime-fault-idempotency-p0", { readOnlyPrompt: true }),
+  runtimeFaultScenario("fault-contradictory-terminal", "runtime-fault-contradictory-terminal-p0", { readOnlyPrompt: true }),
 ];
 
 // ---------------------------------------------------------------------------

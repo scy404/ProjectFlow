@@ -32,13 +32,16 @@ import {
   mutateLeakRawIdInOutput,
   mutateTerminalStatus,
   mutateBeforeState,
+  mutateProposalFactsChanged,
 } from "../../src/evaluation/lab/mutation.js";
 import {
   HIDDEN_TOKEN,
+  PRIMARY_VIEWER_ID,
   PRIVATE_CONV_ID,
   PROJECT_ID,
   SUBJECT_OWNER_MEMORY_ID,
   TASK_ID,
+  TEAM_MEMORY_ID,
   WORKSPACE_ID,
   buildPassingFullInput,
   buildPassingMinimalInput,
@@ -89,6 +92,30 @@ describe("hard grader mutation detection — outcome dimension", () => {
     const grade = gradeHard(input);
     expect(grade.graders.finalOutcome).toBe(false);
     expect(grade.passed).toBe(false);
+  });
+
+  it("finalOutcome: does not count effect_type=none as a side effect", () => {
+    const baseline = buildPassingMinimalInput();
+    const input: typeof baseline = {
+      ...baseline,
+      oracle: {
+        ...baseline.oracle,
+        run: { finalStatus: "completed", maxSideEffects: 0 },
+      },
+      primarySnapshot: {
+        ...baseline.primarySnapshot,
+        side_effect_facts: [
+          {
+            tool_call_id: "read-001",
+            status: "completed",
+            effect_type: "none",
+            tool_name: "get_workspace_state",
+          },
+        ],
+      },
+    };
+    const grade = gradeHard(input);
+    expect(grade.graders.finalOutcome).toBe(true);
   });
 
   it("stateConstraints: detects required path violation", () => {
@@ -185,11 +212,43 @@ describe("hard grader mutation detection — authority & safety dimension", () =
       repeats: [
         {
           observation: baseline.observation,
-          snapshot: baseline.primarySnapshot,
+          snapshot: {
+            ...baseline.primarySnapshot,
+            side_effect_facts: [],
+          },
         },
       ],
     };
     const grade = gradeHard(mutated);
+    expect(grade.graders.idempotency).toBe(true);
+  });
+
+  it("idempotency: ignores read-only effect_type=none facts in repeats", () => {
+    const baseline = buildPassingMinimalInput();
+    const input: typeof baseline = {
+      ...baseline,
+      oracle: {
+        ...baseline.oracle,
+        idempotency: { repeats: 1, maxNewSideEffectsPerRepeat: 0 },
+      },
+      repeats: [
+        {
+          observation: baseline.observation,
+          snapshot: {
+            ...baseline.primarySnapshot,
+            side_effect_facts: [
+              {
+                tool_call_id: "read-repeat-001",
+                status: "completed",
+                effect_type: "none",
+                tool_name: "get_workspace_state",
+              },
+            ],
+          },
+        },
+      ],
+    };
+    const grade = gradeHard(input);
     expect(grade.graders.idempotency).toBe(true);
   });
 
@@ -1052,5 +1111,405 @@ describe("UUID pattern — covers v6/v7/v8 (L-01)", () => {
     };
     const grade = gradeHard(mutated);
     expect(grade.graders.rawIdLeakage).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T46-100 adversarial-review remediation tests (Findings 5–6).
+// memoryTypeVisibility (S6) and privateConversationsHiddenFromAdversary (S5).
+// ---------------------------------------------------------------------------
+
+describe("memoryTypeVisibility — required pair + sourceType + newSinceBefore (S6/B6)", () => {
+  it("fails when required memory_type+visibility pair is missing", () => {
+    const baseline = buildPassingFullInput();
+    // Remove the direction/team/source_type=direction_card_confirmed memory from primary snapshot.
+    const mutated: typeof baseline = {
+      ...baseline,
+      primarySnapshot: {
+        ...baseline.primarySnapshot,
+        memory_facts: baseline.primarySnapshot.memory_facts.filter(
+          (m) => !(m.memory_type === "direction" && m.source_type === "direction_card_confirmed" && m.visibility === "team"),
+        ),
+      },
+    };
+    const grade = gradeHard(mutated);
+    expect(grade.graders.memoryTypeVisibility).toBe(false);
+    expect(grade.passed).toBe(false);
+  });
+
+  it("fails when memory_type matches but source_type is wrong", () => {
+    const baseline = buildPassingFullInput();
+    // mem_type=direction, visibility=team, but source_type=replan_confirmed (not direction_card_confirmed)
+    const mutated: typeof baseline = {
+      ...baseline,
+      primarySnapshot: {
+        ...baseline.primarySnapshot,
+        memory_facts: baseline.primarySnapshot.memory_facts.map((m) =>
+          m.memory_id === TEAM_MEMORY_ID
+            ? { ...m, source_type: "replan_confirmed" }
+            : m,
+        ),
+      },
+    };
+    const grade = gradeHard(mutated);
+    expect(grade.graders.memoryTypeVisibility).toBe(false);
+    expect(grade.passed).toBe(false);
+  });
+
+  it("fails when memory matches but is pre-existing in before snapshot (newSinceBefore)", () => {
+    const baseline = buildPassingFullInput();
+    // Put TEAM_MEMORY_ID into the before snapshot → it's pre-existing, not new.
+    // The full baseline's beforeSnapshot has memory_facts: [], so we need to
+    // explicitly inject TEAM_MEMORY_ID.
+    const beforeWithTeam = {
+      ...baseline.beforeSnapshot!,
+      memory_facts: [
+        ...(baseline.beforeSnapshot!.memory_facts ?? []),
+        {
+          memory_id: TEAM_MEMORY_ID,
+          memory_type: "direction",
+          source_type: "direction_card_confirmed",
+          scope: "project",
+          status: "active",
+          visibility: "team",
+          subject_user_id_present: false,
+          owner_user_id_snapshot_present: false,
+          related_stage_id_present: false,
+          related_task_id_present: false,
+          related_risk_id_present: false,
+          valid_until_present: false,
+          content_visible: true,
+          created_at: "2026-07-19T00:00:00.000Z",
+        },
+      ],
+    };
+    const mutated: typeof baseline = {
+      ...baseline,
+      beforeSnapshot: beforeWithTeam,
+    };
+    const grade = gradeHard(mutated);
+    // newSinceBefore=true should fail because the same memory_id is in before.
+    expect(grade.graders.memoryTypeVisibility).toBe(false);
+    expect(grade.passed).toBe(false);
+    expect(grade.failures.some((f) => f.includes("非新建记忆") || f.includes("before"))).toBe(true);
+  });
+
+  it("passes when memory is new (not in before) with correct type/visibility/source", () => {
+    const baseline = buildPassingFullInput();
+    // Remove TEAM_MEMORY_ID from the before snapshot → it's "new" in primary.
+    const beforeWithoutTeam = {
+      ...baseline.beforeSnapshot!,
+      memory_facts: baseline.beforeSnapshot!.memory_facts.filter(
+        (m) => m.memory_id !== TEAM_MEMORY_ID,
+      ),
+    };
+    const mutated: typeof baseline = {
+      ...baseline,
+      beforeSnapshot: beforeWithoutTeam,
+    };
+    const grade = gradeHard(mutated);
+    expect(grade.graders.memoryTypeVisibility, grade.failures.join("\n")).toBe(true);
+  });
+
+  it("fails when required clause requires newSinceBefore but beforeSnapshot is missing", () => {
+    const baseline = buildPassingMinimalInput();
+    const mutated: typeof baseline = {
+      ...baseline,
+      oracle: {
+        ...baseline.oracle,
+        memoryTypeVisibility: {
+          required: [{ memoryType: "direction", visibility: "team", sourceType: "direction_card_confirmed", newSinceBefore: true }],
+          forbidden: [],
+        },
+      },
+      beforeSnapshot: null,
+    };
+    const grade = gradeHard(mutated);
+    expect(grade.graders.memoryTypeVisibility).toBe(false);
+    expect(grade.failures.some((f) => f.includes("缺少 before 快照"))).toBe(true);
+  });
+
+  it("passes old pre-existing matching memory alone without newSinceBefore", () => {
+    const baseline = buildPassingFullInput();
+    const mutated: typeof baseline = {
+      ...baseline,
+      oracle: {
+        ...baseline.oracle,
+        memoryTypeVisibility: {
+          required: [{ memoryType: "direction", visibility: "team", sourceType: "direction_card_confirmed" }],
+          // newSinceBefore not set — old memory is acceptable.
+          forbidden: [],
+        },
+      },
+    };
+    const grade = gradeHard(mutated);
+    expect(grade.graders.memoryTypeVisibility, grade.failures.join("\n")).toBe(true);
+  });
+
+  it("fails when wrong visibility for a matching type/source", () => {
+    const baseline = buildPassingFullInput();
+    // Change TEAM_MEMORY_ID visibility to subject_and_owner — wrong visibility.
+    const mutated: typeof baseline = {
+      ...baseline,
+      primarySnapshot: {
+        ...baseline.primarySnapshot,
+        memory_facts: baseline.primarySnapshot.memory_facts.map((m) =>
+          m.memory_id === TEAM_MEMORY_ID
+            ? { ...m, visibility: "subject_and_owner" }
+            : m,
+        ),
+      },
+    };
+    const grade = gradeHard(mutated);
+    expect(grade.graders.memoryTypeVisibility).toBe(false);
+    expect(grade.passed).toBe(false);
+  });
+
+  it("fails when newSinceBefore=true without sourceType and only pre-existing memory exists", () => {
+    const baseline = buildPassingFullInput();
+    // Inject the direction/team memory into beforeSnapshot so it's pre-existing.
+    // newSinceBefore=true should fail because no genuinely NEW matching memory exists.
+    const beforeWithDirection = {
+      ...baseline.beforeSnapshot!,
+      memory_facts: [
+        ...(baseline.beforeSnapshot!.memory_facts ?? []),
+        {
+          memory_id: TEAM_MEMORY_ID,
+          memory_type: "direction",
+          source_type: "direction_card_confirmed",
+          scope: "project",
+          status: "active",
+          visibility: "team",
+          subject_user_id_present: false,
+          owner_user_id_snapshot_present: false,
+          related_stage_id_present: false,
+          related_task_id_present: false,
+          related_risk_id_present: false,
+          valid_until_present: false,
+          content_visible: true,
+          created_at: "2026-07-19T00:00:00.000Z",
+        },
+      ],
+    };
+    const mutated: typeof baseline = {
+      ...baseline,
+      oracle: {
+        ...baseline.oracle,
+        memoryTypeVisibility: {
+          required: [{ memoryType: "direction", visibility: "team", newSinceBefore: true }],
+          forbidden: [],
+        },
+      },
+      beforeSnapshot: beforeWithDirection,
+    };
+    const grade = gradeHard(mutated);
+    expect(grade.graders.memoryTypeVisibility).toBe(false);
+    expect(grade.passed).toBe(false);
+    expect(grade.failures.some((f) => f.includes("非新建记忆") || f.includes("before"))).toBe(true);
+  });
+
+  it("passes when newSinceBefore=true without sourceType and genuinely new memory exists", () => {
+    const baseline = buildPassingFullInput();
+    // No direction/team memory in beforeSnapshot → primary's direction/team
+    // memory is genuinely new. newSinceBefore=true without sourceType should pass.
+    const mutated: typeof baseline = {
+      ...baseline,
+      oracle: {
+        ...baseline.oracle,
+        memoryTypeVisibility: {
+          required: [{ memoryType: "direction", visibility: "team", newSinceBefore: true }],
+          forbidden: [],
+        },
+      },
+      beforeSnapshot: {
+        ...baseline.beforeSnapshot!,
+        memory_facts: [],
+      },
+    };
+    const grade = gradeHard(mutated);
+    expect(grade.graders.memoryTypeVisibility, grade.failures.join("\n")).toBe(true);
+  });
+
+  it("skips when memoryTypeVisibility is absent from oracle", () => {
+    const baseline = buildPassingMinimalInput();
+    // Minimal oracle has no memoryTypeVisibility — grader should skip.
+    const grade = gradeHard(baseline);
+    expect(grade.skipped).toContain("memoryTypeVisibility");
+    expect(grade.graders.memoryTypeVisibility).toBe(true);
+  });
+});
+
+describe("privateConversationsHiddenFromAdversary — Check 3 vacuous-pass guard (S5)", () => {
+  it("fails when primary has no private conversations (vacuous pass refused)", () => {
+    const baseline = buildPassingFullInput();
+    // Remove ALL private conversations from the primary snapshot.
+    const mutated: typeof baseline = {
+      ...baseline,
+      primarySnapshot: {
+        ...baseline.primarySnapshot,
+        conversation_facts: baseline.primarySnapshot.conversation_facts.filter(
+          (c) => c.visibility !== "private",
+        ),
+      },
+    };
+    const grade = gradeHard(mutated);
+    expect(grade.graders.privateConversationVisibility).toBe(false);
+    expect(grade.passed).toBe(false);
+    expect(grade.failures.some((f) => f.includes("无私有会话") || f.includes("vacuous"))).toBe(true);
+  });
+
+  it("fails when a primary private conversation leaks to adversary", () => {
+    const baseline = buildPassingFullInput();
+    // Add the primary's private conversation to the adversary snapshot.
+    const mutated: typeof baseline = {
+      ...baseline,
+      adversarySnapshot: {
+        ...baseline.adversarySnapshot!,
+        conversation_facts: [
+          ...baseline.adversarySnapshot!.conversation_facts,
+          {
+            conversation_id: PRIVATE_CONV_ID,
+            visibility: "private",
+            creator_user_id: PRIMARY_VIEWER_ID,
+            status: "active",
+            message_count: 1,
+            created_at: "2026-07-19T00:00:00.000Z",
+            updated_at: "2026-07-19T00:00:00.000Z",
+          },
+        ],
+      },
+    };
+    const grade = gradeHard(mutated);
+    expect(grade.graders.privateConversationVisibility).toBe(false);
+    expect(grade.passed).toBe(false);
+  });
+
+  it("skips when privateConversationsHiddenFromAdversary is absent from oracle", () => {
+    const baseline = buildPassingMinimalInput();
+    // Minimal oracle has no privateConversationsHiddenFromAdversary — grader
+    // still runs (Check 2 covers private conversations generally), but Check 3
+    // is not enforced.
+    const grade = gradeHard(baseline);
+    // The minimal oracle has no adversaryUserId, so privateConversationVisibility
+    // is skipped entirely (no adversary viewer declared).
+    expect(grade.skipped).toContain("privateConversationVisibility");
+  });
+});
+
+describe("proposalFactsUnchanged — detects proposal drift (A2)", () => {
+  it("fails when before snapshot proposal_facts differ from primary", () => {
+    const baseline = buildPassingFullInput();
+    const mutated: typeof baseline = {
+      ...baseline,
+      oracle: {
+        ...baseline.oracle,
+        proposalFactsUnchanged: true,
+      },
+    };
+    const result = runMutation(mutated, mutateProposalFactsChanged());
+    expect(result.detected).toBe(true);
+    expect(result.targetedGraderFlipped).toBe(true);
+    expect(result.mutatedGrade.graders.proposalFactsUnchanged).toBe(false);
+  });
+
+  it("passes when proposal_facts are unchanged", () => {
+    const baseline = buildPassingFullInput();
+    // Ensure beforeSnapshot.proposal_facts matches primarySnapshot.proposal_facts
+    // so the unchanged check passes.
+    const mutated: typeof baseline = {
+      ...baseline,
+      beforeSnapshot: {
+        ...baseline.beforeSnapshot!,
+        proposal_facts: [...baseline.primarySnapshot.proposal_facts],
+      },
+      oracle: {
+        ...baseline.oracle,
+        proposalFactsUnchanged: true,
+      },
+    };
+    const grade = gradeHard(mutated);
+    expect(grade.graders.proposalFactsUnchanged, grade.failures.join("\n")).toBe(true);
+  });
+
+  it("fails closed when before snapshot is missing", () => {
+    const baseline = buildPassingMinimalInput();
+    const mutated: typeof baseline = {
+      ...baseline,
+      oracle: {
+        ...baseline.oracle,
+        proposalFactsUnchanged: true,
+      },
+      beforeSnapshot: null,
+    };
+    const grade = gradeHard(mutated);
+    expect(grade.graders.proposalFactsUnchanged).toBe(false);
+    expect(grade.failures.some((f) => f.includes("缺少 before 快照"))).toBe(true);
+  });
+
+  it("skips when proposalFactsUnchanged is not declared", () => {
+    const baseline = buildPassingFullInput();
+    const grade = gradeHard(baseline);
+    expect(grade.skipped).toContain("proposalFactsUnchanged");
+    expect(grade.graders.proposalFactsUnchanged).toBe(true);
+  });
+
+  it("detects status change with same proposal count and same proposal IDs", () => {
+    const baseline = buildPassingFullInput();
+    // Same proposal_id, same count, but different status.
+    const mutated: typeof baseline = {
+      ...baseline,
+      beforeSnapshot: {
+        ...baseline.beforeSnapshot!,
+        proposal_facts: [
+          {
+            proposal_id: "prop-001",
+            proposal_type: "assignment",
+            status: "confirmed",
+            confirmed_by_present: true,
+            confirmed_at_present: true,
+            rejection_reason_present: false,
+            payload_keys: ["stage_id", "task_id"],
+            created_at: "2026-07-19T00:00:00.000Z",
+          },
+        ],
+      },
+      oracle: {
+        ...baseline.oracle,
+        proposalFactsUnchanged: true,
+      },
+    };
+    const grade = gradeHard(mutated);
+    expect(grade.graders.proposalFactsUnchanged).toBe(false);
+    expect(grade.passed).toBe(false);
+  });
+
+  it("detects proposal_id change with same count and same status", () => {
+    const baseline = buildPassingFullInput();
+    // Same count, same status, but different proposal_id.
+    const mutated: typeof baseline = {
+      ...baseline,
+      beforeSnapshot: {
+        ...baseline.beforeSnapshot!,
+        proposal_facts: [
+          {
+            proposal_id: "prop-999",
+            proposal_type: "assignment",
+            status: "pending",
+            confirmed_by_present: false,
+            confirmed_at_present: false,
+            rejection_reason_present: false,
+            payload_keys: ["stage_id", "task_id"],
+            created_at: "2026-07-19T00:00:00.000Z",
+          },
+        ],
+      },
+      oracle: {
+        ...baseline.oracle,
+        proposalFactsUnchanged: true,
+      },
+    };
+    const grade = gradeHard(mutated);
+    expect(grade.graders.proposalFactsUnchanged).toBe(false);
+    expect(grade.passed).toBe(false);
   });
 });

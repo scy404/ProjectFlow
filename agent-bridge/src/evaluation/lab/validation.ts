@@ -18,6 +18,10 @@ import {
   type MilestoneDag,
   type StateAssertion,
 } from "./contract-v2.js";
+import {
+  getFixtureContract,
+  computeFixtureContractSha256,
+} from "./fixture-contracts.js";
 
 const SAFE_ID = /^[a-zA-Z0-9_-]+$/;
 
@@ -126,6 +130,42 @@ function validateScenario(scenario: ScenarioContract): ValidationIssue[] {
   // invalid or contradictory contracts).
   const hardGraderErrors = validateHardGrader(scenario);
   errors.push(...hardGraderErrors);
+
+  // T46-100 S7: fixtureContractId → mandatory sha256 binding.
+  // When a scenario declares a fixture contract, it MUST provide
+  // fixtureContractSha256, it MUST be 64-char lowercase hex, and it
+  // MUST match the registered FixtureContract's computed hash.
+  if (scenario.hidden.v3?.fixtureContractId) {
+    const { fixtureContractId, fixtureContractSha256 } = scenario.hidden.v3;
+    if (!fixtureContractSha256) {
+      add(
+        "scenario_fixture_sha256_missing",
+        `场景 ${scenario.scenarioId} 声明 fixtureContractId="${fixtureContractId}" 但未提供 fixtureContractSha256`,
+      );
+    } else if (!/^[0-9a-f]{64}$/.test(fixtureContractSha256)) {
+      add(
+        "scenario_fixture_sha256_format",
+        `场景 ${scenario.scenarioId} 的 fixtureContractSha256 格式无效，期望 64 位小写十六进制`,
+      );
+    } else {
+      const registered = getFixtureContract(fixtureContractId);
+      if (!registered) {
+        add(
+          "scenario_fixture_contract_missing",
+          `场景 ${scenario.scenarioId} 引用未注册的 fixture contract "${fixtureContractId}"`,
+        );
+      } else {
+        const computed = computeFixtureContractSha256(registered);
+        if (fixtureContractSha256 !== computed) {
+          add(
+            "scenario_fixture_sha256_mismatch",
+            `场景 ${scenario.scenarioId} 的 fixtureContractSha256 与注册表不匹配 (声明 ${fixtureContractSha256.slice(0, 16)}..., 计算 ${computed.slice(0, 16)}...)`,
+          );
+        }
+      }
+    }
+  }
+
   return errors;
 }
 
@@ -621,7 +661,11 @@ interface ModelConfigFile {
   }>;
 }
 
-async function validateModel(projectRoot: string, model: string): Promise<ValidationIssue[]> {
+async function validateModel(
+  projectRoot: string,
+  model: string,
+  allowBoundedPaidPreview = false,
+): Promise<ValidationIssue[]> {
   const errors: ValidationIssue[] = [];
   const separator = model.indexOf(":");
   if (separator <= 0 || separator === model.length - 1) {
@@ -675,10 +719,10 @@ async function validateModel(projectRoot: string, model: string): Promise<Valida
     errors.push({ code: "model_unknown", message: `模型 ${model} 未在 model-configs.json 注册` });
     return errors;
   }
-  if (provider !== "mock") {
+  if (provider !== "mock" && !allowBoundedPaidPreview) {
     errors.push({
       code: "paid_model_unbounded",
-      message: `Slice 0 尚无 ${model} 的冻结价格表与调用前最坏成本预估，拒绝启动付费模型`,
+      message: `模型 ${model} 仅允许通过完成冻结价格、调用前最坏成本和 credential 门禁的 live preview 路径运行`,
     });
   }
   return errors;
@@ -715,11 +759,12 @@ export async function validateEvaluationConfig(options: {
   /** Optional calibrate budget (required when preset="calibrate").
    *  Validates the independent evaluator ceiling and SUT cap. */
   calibrateBudget?: CalibrateBudget;
-  /** When true, skip toolchain validation (Node version, python venv,
-   *  tsx). Used by live preview to avoid failing on env-specific
-   *  toolchain mismatches that are orthogonal to the preview's
-   *  correctness. Defaults to false. */
+  /** Skip Node.js version check in toolchain validation.
+   *  Required for live-preview and CI environments. */
   skipToolchainValidation?: boolean;
+  /** Internal-only: the caller already passed the dedicated live-preview
+   * pricing, credential and worst-case gates. Ordinary CLI runs omit it. */
+  allowBoundedPaidPreview?: boolean;
 }): Promise<ValidationResult> {
   const scenarioErrors = options.scenarios.flatMap(validateScenario);
   const duplicateIds = options.scenarios
@@ -743,7 +788,11 @@ export async function validateEvaluationConfig(options: {
       calibrateBudgetErrors.push(...validateCalibrateBudget(options.calibrateBudget));
     }
   }
-  const modelErrors = await validateModel(options.projectRoot, options.model);
+  const modelErrors = await validateModel(
+    options.projectRoot,
+    options.model,
+    options.allowBoundedPaidPreview,
+  );
   const toolchainErrors = options.skipToolchainValidation ? [] : await validateToolchain(options.projectRoot);
   const errors = [
     ...scenarioErrors,

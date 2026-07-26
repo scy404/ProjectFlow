@@ -535,4 +535,8 @@ npm run build
 | [种子场景](seed-scenarios.md) | 演示数据中的 blocker/风险/重排场景 |
 | [交接状态](handoff.md) | 当前完成状态和下一步工作 |
 | [T46 Evaluation Lab 规格](T46/ProjectFlow_Agent_Evaluation_Lab_Spec.md) | Agent 评测完整架构、切片与硬门禁 |
-| [T46 Slice 0 交接](T46/ProjectFlow_Agent_Evaluation_Lab_Slice0_Handoff.md) | Coding Agent 使用命令、成本口径、证据与恢复语义 |
+| [T46 Slice 0 交接](T46/ProjectFlow_Agent_Evaluation_Lab_Slice0_Handoff.md) | 最小可信回路、隔离、CLI、Skill、场景合约 |
+| [T46 Slice 1 交接](T46/ProjectFlow_Agent_Evaluation_Lab_Slice1_Handoff.md) | Hard-domain graders、多轮/Skill/Runtime/可靠性 |
+| [T46 Slice 3 交接](T46/ProjectFlow_Agent_Evaluation_Lab_Slice3_Handoff.md) | Governed calibration、semantic rubric、标准冲突 |
+| [T46 Slice 4 交接](T46/ProjectFlow_Agent_Evaluation_Lab_Slice4_Handoff.md) | Golden Core 52 场景扩展与冻结 |
+| [T46 Slice 5 交接](T46/ProjectFlow_Agent_Evaluation_Lab_Slice5_Handoff.md) | Showcase bundle、viewer、preview、retention、agent-acceptance |

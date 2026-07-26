@@ -13,6 +13,7 @@ Proposal tools return side_effect_status=proposal_persisted.
 
 import json
 import os
+from datetime import date, timedelta
 
 os.environ["INTERNAL_SERVICE_TOKEN"] = "test-internal-service-token"
 
@@ -37,6 +38,22 @@ from app.models import (
 from app.models.agent_run_state import AgentRunV2
 from app.models.enums import AgentEventType, AgentProposalStatus, AgentRunStatus, TaskStatus
 from app.core.database import get_session
+
+# Relative future dates to prevent test date drift.
+# Base = today + 30 days; each offset preserves original relative relationships.
+_T = date.today() + timedelta(days=30)
+D0 = (_T + timedelta(days=0)).isoformat()
+D4 = (_T + timedelta(days=4)).isoformat()
+D6 = (_T + timedelta(days=6)).isoformat()
+D7 = (_T + timedelta(days=7)).isoformat()
+D9 = (_T + timedelta(days=9)).isoformat()
+D13 = (_T + timedelta(days=13)).isoformat()
+D14 = (_T + timedelta(days=14)).isoformat()
+D15 = (_T + timedelta(days=15)).isoformat()
+D19 = (_T + timedelta(days=19)).isoformat()
+D27 = (_T + timedelta(days=27)).isoformat()
+D31 = (_T + timedelta(days=31)).isoformat()
+D62 = (_T + timedelta(days=62)).isoformat()
 
 
 @pytest.fixture
@@ -84,7 +101,7 @@ def _seed(test_engine) -> dict:
                 workspace_id="ws1",
                 name="测试项目",
                 idea="做一个 demo",
-                deadline="2026-08-01",
+                deadline=D31,
                 deliverables="演示闭环",
                 created_by="u1",
             )
@@ -153,7 +170,7 @@ def _create_stage_plan_fixture(client: TestClient) -> dict:
             "workspace_id": workspace["id"],
             "name": "Stage Plan Project",
             "idea": "Create a demo-ready MVP",
-            "deadline": "2026-07-15",
+            "deadline": D14,
             "deliverables": "Demo",
             "created_by": owner["id"],
         },
@@ -183,7 +200,7 @@ def _create_checkin_analysis_fixture(client: TestClient) -> dict:
             "workspace_id": workspace["id"],
             "name": "Checkin Project",
             "idea": "Validate advisory write behavior",
-            "deadline": "2026-07-20",
+            "deadline": D19,
             "deliverables": "Validated tool contract",
             "created_by": owner["id"],
         },
@@ -194,8 +211,8 @@ def _create_checkin_analysis_fixture(client: TestClient) -> dict:
             "project_id": project["id"],
             "name": "Execution",
             "goal": "Handle blockers safely",
-            "start_date": "2026-07-01",
-            "end_date": "2026-07-10",
+            "start_date": D0,
+            "end_date": D9,
             "deliverable": "Stable execution loop",
         },
     ).json()
@@ -207,7 +224,7 @@ def _create_checkin_analysis_fixture(client: TestClient) -> dict:
             "title": "Implement advisory tool",
             "description": "Keep inferred task changes out of primary state writes",
             "priority": "P0",
-            "due_date": "2026-07-08",
+            "due_date": D7,
             "estimated_hours": 8,
         },
     ).json()
@@ -217,7 +234,7 @@ def _create_checkin_analysis_fixture(client: TestClient) -> dict:
             "project_id": project["id"],
             "stage_id": stage["id"],
             "cadence_days": 2,
-            "start_date": "2026-07-05",
+            "start_date": D4,
             "created_by_user_id": owner["id"],
         },
     ).json()
@@ -283,8 +300,8 @@ _STAGE_PLAN_OUTPUT = {
         {
             "name": "核心实现",
             "goal": "完成核心功能",
-            "start_date": "2026-07-07",
-            "end_date": "2026-07-14",
+            "start_date": D6,
+            "end_date": D13,
             "deliverable": "可运行的核心闭环",
             "done_criteria": ["核心流程跑通"],
             "order_index": 0,
@@ -303,7 +320,7 @@ _TASK_BREAKDOWN_OUTPUT = {
             "title": "前后端联调",
             "description": "集成前后端",
             "priority": "P1",
-            "due_date": "2026-07-10",
+            "due_date": D9,
             "estimated_hours": 6.0,
             "dependency_ids": [],
             "acceptance_criteria": ["能正常通信"],
@@ -318,7 +335,7 @@ _REPLAN_OUTPUT = {
     "reason": "Sidecar 生成的重规划",
     "requires_confirmation": True,
     "before": {"summary": "项目超期"},
-    "after": {"summary": "调整里程碑", "deadline": "2026-07-28"},
+    "after": {"summary": "调整里程碑", "deadline": D27},
     "impact": "给予一周缓冲",
     "stage_adjustments": [],
     "task_changes": [],
@@ -815,7 +832,7 @@ def _seed_assignment(test_engine) -> dict:
                 workspace_id="ws1",
                 name="测试项目",
                 idea="做一个 demo",
-                deadline="2026-08-01",
+                deadline=D31,
                 deliverables="演示闭环",
                 created_by="u1",
             )
@@ -826,8 +843,8 @@ def _seed_assignment(test_engine) -> dict:
                 project_id="p1",
                 name="规划阶段",
                 goal="完成项目规划",
-                start_date="2026-07-01",
-                end_date="2026-07-15",
+                start_date=D0,
+                end_date=D14,
                 deliverable="阶段计划文档",
                 order_index=0,
                 status="active",
@@ -1086,7 +1103,7 @@ class TestAssignmentRecommendationTool:
                     workspace_id="ws1",
                     name="另一个项目",
                     idea="另一个想法",
-                    deadline="2026-09-01",
+                    deadline=D62,
                     deliverables="交付物",
                     created_by="u1",
                 )
@@ -1097,8 +1114,8 @@ class TestAssignmentRecommendationTool:
                     project_id="p2",
                     name="另一阶段",
                     goal="另一目标",
-                    start_date="2026-07-01",
-                    end_date="2026-07-15",
+                    start_date=D0,
+                    end_date=D14,
                     deliverable="交付物",
                     order_index=0,
                     status="active",
@@ -1130,8 +1147,8 @@ class TestAssignmentRecommendationTool:
                     project_id="p1",
                     name="开发阶段",
                     goal="完成开发",
-                    start_date="2026-07-15",
-                    end_date="2026-08-01",
+                    start_date=D14,
+                    end_date=D31,
                     deliverable="代码",
                     order_index=1,
                     status="pending",
@@ -1302,7 +1319,7 @@ def _seed_s11(test_engine) -> dict:
                 workspace_id="ws1",
                 name="测试项目",
                 idea="做一个 demo",
-                deadline="2026-08-01",
+                deadline=D31,
                 deliverables="演示闭环",
                 created_by="u1",
             )
@@ -1313,8 +1330,8 @@ def _seed_s11(test_engine) -> dict:
                 project_id="p1",
                 name="开发阶段",
                 goal="完成功能开发",
-                start_date="2026-07-01",
-                end_date="2026-07-15",
+                start_date=D0,
+                end_date=D14,
                 deliverable="功能代码",
                 order_index=0,
                 status="active",
@@ -1444,7 +1461,7 @@ class TestCreateRiskTool:
                     workspace_id="ws1",
                     name="另一个项目",
                     idea="另一个想法",
-                    deadline="2026-09-01",
+                    deadline=D62,
                     deliverables="交付物",
                     created_by="u1",
                 )
@@ -1455,8 +1472,8 @@ class TestCreateRiskTool:
                     project_id="p2",
                     name="另一阶段",
                     goal="另一目标",
-                    start_date="2026-07-01",
-                    end_date="2026-07-15",
+                    start_date=D0,
+                    end_date=D14,
                     deliverable="交付物",
                     order_index=0,
                     status="active",
@@ -1584,7 +1601,7 @@ class TestCreateCheckinTool:
                     workspace_id="ws1",
                     name="另一个项目",
                     idea="另一个想法",
-                    deadline="2026-09-01",
+                    deadline=D62,
                     deliverables="交付物",
                     created_by="u1",
                 )
@@ -1595,8 +1612,8 @@ class TestCreateCheckinTool:
                     project_id="p2",
                     name="另一阶段",
                     goal="另一目标",
-                    start_date="2026-07-01",
-                    end_date="2026-07-15",
+                    start_date=D0,
+                    end_date=D14,
                     deliverable="交付物",
                     order_index=0,
                     status="active",
@@ -1659,8 +1676,8 @@ class TestCreateCheckinTool:
                     project_id="p1",
                     name="测试阶段",
                     goal="测试目标",
-                    start_date="2026-07-16",
-                    end_date="2026-07-20",
+                    start_date=D15,
+                    end_date=D19,
                     deliverable="测试交付物",
                     order_index=1,
                     status="pending",
@@ -2090,7 +2107,7 @@ class TestToolSafety:
                     workspace_id="ws1",
                     name="另一个项目",
                     idea="另一个想法",
-                    deadline="2026-09-01",
+                    deadline=D62,
                     deliverables="交付物",
                     created_by="u1",
                 )
@@ -2133,8 +2150,8 @@ class TestSidecarDirectPersist:
             {
                 "name": "核心实现",
                 "goal": "完成核心功能",
-                "start_date": "2026-07-07",
-                "end_date": "2026-07-14",
+                "start_date": D6,
+                "end_date": D13,
                 "deliverable": "可运行的核心闭环",
                 "done_criteria": ["核心流程跑通"],
                 "order_index": 0,
@@ -2153,7 +2170,7 @@ class TestSidecarDirectPersist:
                 "title": "前后端联调",
                 "description": "集成前后端",
                 "priority": "P1",
-                "due_date": "2026-07-10",
+                "due_date": D9,
                 "estimated_hours": 6.0,
                 "dependency_ids": [],
                 "acceptance_criteria": ["能正常通信"],
@@ -2168,7 +2185,7 @@ class TestSidecarDirectPersist:
         "reason": "Sidecar 生成的重规划",
         "requires_confirmation": True,
         "before": {"summary": "项目超期"},
-        "after": {"summary": "调整里程碑", "deadline": "2026-07-28"},
+        "after": {"summary": "调整里程碑", "deadline": D27},
         "impact": "给予一周缓冲",
         "stage_adjustments": [],
         "task_changes": [],
@@ -2184,8 +2201,8 @@ class TestSidecarDirectPersist:
                 project_id="p1",
                 name="核心实现",
                 goal="完成核心",
-                start_date="2026-07-07",
-                end_date="2026-07-14",
+                start_date=D6,
+                end_date=D13,
                 deliverable="核心闭环",
                 status="in_progress",
                 order_index=0,

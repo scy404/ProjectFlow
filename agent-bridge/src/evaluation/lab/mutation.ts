@@ -272,7 +272,8 @@ export function mutateLeakMemoryToAdversary(
       if (!adversarySnapshot) return cloned;
       adversarySnapshot.memory_facts.push({
         memory_id: memoryId,
-        memory_type: "assignment_confirmed",
+        memory_type: "assignment",
+        source_type: "assignment_confirmed",
         scope: "project",
         status: "active",
         visibility: "subject_and_owner",
@@ -385,6 +386,32 @@ export function mutateBeforeState(
       } else if (current && typeof current === "object") {
         (current as Record<string, unknown>)[lastSegment] = newValue;
       }
+      return cloned;
+    },
+  };
+}
+
+/**
+ * Create a mutation that modifies the before snapshot's proposal_facts to
+ * differ from the primary snapshot (for proposalFactsUnchanged checks).
+ */
+export function mutateProposalFactsChanged(): MutationCase {
+  return {
+    id: "proposalFactsUnchanged-changed",
+    targets: "proposalFactsUnchanged",
+    description: "修改 before snapshot 的 proposal_facts 使运行前后不一致",
+    apply: (input) => {
+      const cloned = cloneInput(input);
+      if (!cloned.beforeSnapshot) {
+        cloned.beforeSnapshot = JSON.parse(JSON.stringify(cloned.primarySnapshot));
+      }
+      const beforeSnapshot = cloned.beforeSnapshot;
+      if (!beforeSnapshot) return cloned;
+      // Add a proposal to before that's not in primary, or change status.
+      beforeSnapshot.proposal_facts = beforeSnapshot.proposal_facts.map((p) => ({
+        ...p,
+        status: p.status === "pending" ? "confirmed" : "pending",
+      }));
       return cloned;
     },
   };

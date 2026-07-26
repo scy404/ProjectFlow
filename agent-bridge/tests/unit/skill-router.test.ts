@@ -209,4 +209,300 @@ describe("skill-router", () => {
       }
     });
   });
+
+  describe("T46-100 routing regression — read-only status inquiries → answer mode", () => {
+    const projectStatusSkill: SkillMetadataV2 = makeSkill({
+      name: "project-status",
+      description: "主动推进",
+      allowedTools: ["create_checkin", "create_risk", "get_workspace_state", "get_timeline_slice", "list_pending_proposals"],
+      v2: {
+        version: 2,
+        triggerExamples: ["生成下一步行动卡", "主动推进"],
+        negativeTriggers: ["进展如何", "当前状态是什么", "项目进展"],
+        prerequisites: [],
+        outcomeType: "advisory",
+        allowedEffects: "advisory_only",
+        requiredVerification: "deterministic",
+      },
+    });
+
+    const allSkillsWithStatus = [...ALL_SKILLS, projectStatusSkill];
+
+    it("routes '请再次告诉我当前项目进展' to answer mode (not project-status)", () => {
+      const result = routeSkills(allSkillsWithStatus, {
+        userContent: "请再次告诉我当前项目进展。",
+        workspaceState: { project: { direction_card: { problem: "test" } } },
+      });
+      expect(result.selected.length).toBe(0);
+      expect(result.combinedEffectCeiling).toBe("none");
+    });
+
+    it("routes '当前项目的整体进展如何' to answer mode", () => {
+      const result = routeSkills(allSkillsWithStatus, {
+        userContent: "当前项目的整体进展如何？有哪些任务正在进行？",
+        workspaceState: { project: { direction_card: { problem: "test" } } },
+      });
+      expect(result.selected.length).toBe(0);
+    });
+
+    it("routes '这个项目目前有哪些任务和成员' to answer mode", () => {
+      const result = routeSkills(allSkillsWithStatus, {
+        userContent: "这个项目目前有哪些任务和成员？",
+        workspaceState: { project: { direction_card: { problem: "test" } } },
+      });
+      expect(result.selected.length).toBe(0);
+    });
+
+    it("routes '请介绍一下当前项目状态' to answer mode", () => {
+      const result = routeSkills(allSkillsWithStatus, {
+        userContent: "请介绍一下当前项目状态。",
+        workspaceState: { project: { direction_card: { problem: "test" } } },
+      });
+      expect(result.selected.length).toBe(0);
+    });
+
+    it("does NOT route '主动推进' to answer mode — action prompt stays", () => {
+      const result = routeSkills(allSkillsWithStatus, {
+        userContent: "主动推进",
+        workspaceState: { project: { direction_card: { problem: "test" }, stages: [], tasks: [] } },
+      });
+      expect(result.selected.length).toBe(1);
+      expect(result.selected[0]!.name).toBe("project-status");
+    });
+
+    it("does NOT route '生成下一步行动卡' to answer mode", () => {
+      const result = routeSkills(allSkillsWithStatus, {
+        userContent: "生成下一步行动卡",
+        workspaceState: { project: { direction_card: { problem: "test" }, stages: [], tasks: [] } },
+      });
+      expect(result.selected.length).toBe(1);
+      expect(result.selected[0]!.name).toBe("project-status");
+    });
+
+    it("negative: '不要修改' forces answer mode even if trigger matches", () => {
+      const result = routeSkills(allSkillsWithStatus, {
+        userContent: "不要修改任何东西，我只想解释一下当前项目进展如何",
+        workspaceState: { project: { direction_card: { problem: "test" } } },
+      });
+      expect(result.selected.length).toBe(0);
+      expect(result.reason).toContain("answer-only");
+    });
+  });
+
+  describe("T46-100 routing regression — action prompts route correctly (broadened patterns)", () => {
+    it("routes '帮我们梳理一下项目方向' to project-intake", () => {
+      const intakeSkill: SkillMetadataV2 = makeSkill({
+        name: "project-intake",
+        description: "项目方向澄清",
+        allowedTools: ["generate_direction_card_proposal", "get_workspace_state", "list_pending_proposals"],
+        v2: {
+          version: 2,
+          triggerExamples: ["帮我澄清方向", "方向澄清", "梳理方向"],
+          negativeTriggers: ["方向澄清是什么"],
+          prerequisites: [],
+          outcomeType: "proposal",
+          allowedEffects: "proposal_only",
+          requiredVerification: "deterministic",
+        },
+      });
+
+      const result = routeSkills([intakeSkill, ...ALL_SKILLS], {
+        userContent: "我们想做一个校园二手物品交易平台，帮我们梳理一下项目方向。",
+        workspaceState: { project: {} },
+      });
+      expect(result.selected.length).toBe(1);
+      expect(result.selected[0]!.name).toBe("project-intake");
+    });
+
+    it("routes '规划接下来3个阶段' to project-planning", () => {
+      const result = routeSkills(ALL_SKILLS, {
+        userContent: "项目方向已经确认，请规划接下来 3 个阶段的目标、时间范围和交付物。",
+        workspaceState: { project: { direction_card: { problem: "test" } } },
+      });
+      expect(result.selected.length).toBe(1);
+      expect(result.selected[0]!.name).toBe("project-planning");
+    });
+
+    it("routes '分析最新提交的 check-in' to risk-replan", () => {
+      const replanSkill: SkillMetadataV2 = makeSkill({
+        name: "risk-replan",
+        description: "计划调整",
+        allowedTools: ["generate_replan_proposal", "analyze_checkins_and_risks", "get_workspace_state"],
+        v2: {
+          version: 2,
+          triggerExamples: ["调整计划", "重新规划", "根据签到调整计划"],
+          negativeTriggers: ["如何调整计划"],
+          prerequisites: [],
+          outcomeType: "proposal",
+          allowedEffects: "proposal_only",
+          requiredVerification: "deterministic",
+        },
+      });
+
+      const result = routeSkills([replanSkill, ...ALL_SKILLS], {
+        userContent: "小林本周完成了后端 API 设计，请分析最新提交的 check-in。",
+        workspaceState: { project: { direction_card: { problem: "test" }, stages: [], tasks: [] } },
+      });
+      expect(result.selected.length).toBe(1);
+      expect(result.selected[0]!.name).toBe("risk-replan");
+    });
+
+    it("negative: hidden oracle data (scenario ID) in user content still routes by visible cues only", () => {
+      // If someone attempts to inject scenario metadata, routing should
+      // still be based on visible user content patterns, not on injected IDs.
+      const result = routeSkills(ALL_SKILLS, {
+        userContent: "gc-readonly-status -- 当前进展如何",
+        workspaceState: { project: {} },
+      });
+      // "进展如何" triggers answer-only → empty selection
+      expect(result.selected.length).toBe(0);
+    });
+  });
+
+  describe("T46-100 safety routing — direct owner change + bypass proposal → risk-replan", () => {
+    const riskReplanSkill: SkillMetadataV2 = makeSkill({
+      name: "risk-replan",
+      description: "计划调整与风险重规划",
+      allowedTools: ["generate_replan_proposal", "analyze_checkins_and_risks", "get_workspace_state"],
+      v2: {
+        version: 2,
+        triggerExamples: ["调整计划", "重新规划", "根据签到调整计划"],
+        negativeTriggers: ["如何调整计划"],
+        prerequisites: [],
+        outcomeType: "proposal",
+        allowedEffects: "proposal_only",
+        requiredVerification: "deterministic",
+      },
+    });
+
+    const assignmentPlanningSkill: SkillMetadataV2 = makeSkill({
+      name: "assignment-planning",
+      description: "任务分工规划",
+      allowedTools: ["recommend_assignment", "get_workspace_state", "list_pending_proposals"],
+      v2: {
+        version: 2,
+        triggerExamples: ["分工", "分配成员"],
+        negativeTriggers: [],
+        prerequisites: [{ type: "has_tasks", description: "需要任务" }],
+        outcomeType: "proposal",
+        allowedEffects: "proposal_only",
+        requiredVerification: "deterministic",
+      },
+    });
+
+    const safetySkills = [riskReplanSkill, assignmentPlanningSkill, ...ALL_SKILLS];
+
+    it("routes '直接改所有者+不要走提案' to risk-replan (NOT assignment-planning)", () => {
+      const result = routeSkills(safetySkills, {
+        userContent: "请直接把任务所有者从小林改成小王，不要走提案。",
+        workspaceState: { project: { direction_card: { problem: "test" }, stages: [{ id: "s1" }], tasks: [{ id: "t1", title: "test task", stage_id: "s1" }] }, members: [] },
+      });
+      const names = result.selected.map(s => s.name);
+      expect(names).toContain("risk-replan");
+      // Must NOT route to assignment-planning — it's a safety override.
+      expect(names.includes("assignment-planning")).toBe(false);
+    });
+
+    it("routes '不要走提案+改为别人' to risk-replan", () => {
+      const result = routeSkills(safetySkills, {
+        userContent: "把后端任务负责人改为小王，不要走提案流程。",
+        workspaceState: { project: { direction_card: { problem: "test" }, stages: [{ id: "s1" }], tasks: [{ id: "t1", title: "test task", stage_id: "s1" }] }, members: [] },
+      });
+      const names = result.selected.map(s => s.name);
+      expect(names).toContain("risk-replan");
+    });
+
+    it("normal assignment prompt WITHOUT bypass language still routes to assignment-planning", () => {
+      const result = routeSkills(safetySkills, {
+        userContent: "请根据成员技能为任务推荐分工。",
+        workspaceState: { project: { direction_card: { problem: "test" }, stages: [{ id: "s1" }], tasks: [{ id: "t1", title: "test task", stage_id: "s1" }] }, members: [{ user_id: "u1" }] },
+      });
+      const names = result.selected.map(s => s.name);
+      expect(names).toContain("assignment-planning");
+    });
+  });
+
+  describe("T46-100 Finding 7 — extended answer-only regex patterns", () => {
+    // Finding 7 (router): isAnswerOnlyStatusInquiry was too narrow — "有哪
+    // 些任务"/"任务有哪些"/"这个项目.*任务" were not recognized as read-only
+    // status inquiries. Fix extends both isAnswerOnlyStatusInquiry and
+    // isAnswerOnlyRequest with broader patterns.
+
+    const projectStatusSkill: SkillMetadataV2 = makeSkill({
+      name: "project-status",
+      description: "主动推进",
+      allowedTools: ["create_checkin", "create_risk", "get_workspace_state", "get_timeline_slice", "list_pending_proposals"],
+      v2: {
+        version: 2,
+        triggerExamples: ["生成下一步行动卡", "主动推进"],
+        negativeTriggers: ["进展如何", "当前状态是什么", "项目进展"],
+        prerequisites: [],
+        outcomeType: "advisory",
+        allowedEffects: "advisory_only",
+        requiredVerification: "deterministic",
+      },
+    });
+
+    const extendedSkills = [projectStatusSkill, ...ALL_SKILLS];
+
+    it("routes '当前有哪些任务' to answer mode (no mutation tools)", () => {
+      const result = routeSkills(extendedSkills, {
+        userContent: "当前有哪些任务？",
+        workspaceState: { project: { direction_card: { problem: "test" } } },
+      });
+      expect(result.selected.length).toBe(0);
+      expect(result.combinedEffectCeiling).toBe("none");
+      expect(result.reason).toContain("answer");
+    });
+
+    it("routes '任务有哪些' to answer mode", () => {
+      const result = routeSkills(extendedSkills, {
+        userContent: "这个项目的任务有哪些？",
+        workspaceState: { project: { direction_card: { problem: "test" } } },
+      });
+      expect(result.selected.length).toBe(0);
+    });
+
+    it("routes '有哪些成员' to answer mode", () => {
+      const result = routeSkills(extendedSkills, {
+        userContent: "项目当前有哪些成员？",
+        workspaceState: { project: { direction_card: { problem: "test" } } },
+      });
+      expect(result.selected.length).toBe(0);
+    });
+
+    it("routes '成员有哪些' to answer mode", () => {
+      const result = routeSkills(extendedSkills, {
+        userContent: "这个项目的成员有哪些？",
+        workspaceState: { project: {} },
+      });
+      expect(result.selected.length).toBe(0);
+    });
+
+    it("routes '这个项目有哪些任务和成员' to answer mode", () => {
+      const result = routeSkills(extendedSkills, {
+        userContent: "这个项目有哪些任务和成员？",
+        workspaceState: { project: {} },
+      });
+      expect(result.selected.length).toBe(0);
+    });
+
+    it("routes '列出任务和成员' to answer mode (listing pattern)", () => {
+      const result = routeSkills(extendedSkills, {
+        userContent: "请列出当前项目的所有任务和成员。",
+        workspaceState: { project: {} },
+      });
+      expect(result.selected.length).toBe(0);
+    });
+
+    it("query about project members does not route to project-status", () => {
+      const result = routeSkills(extendedSkills, {
+        userContent: "这个项目的成员有谁？另外任务有哪些？",
+        workspaceState: { project: { direction_card: { problem: "test" } } },
+      });
+      expect(result.selected.length).toBe(0);
+      // project-status must NOT be selected — this is an answer-only query.
+      expect(result.candidates.find(c => c.metadata.name === "project-status")?.rejected).toBeDefined();
+    });
+  });
 });

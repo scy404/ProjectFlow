@@ -12,6 +12,9 @@ export interface AgentScenario {
   maxOutputTokens?: number;
   maxRequestCount?: number;
   maxSutCostUsd?: number;
+  /** Optional public runtime reasoning level. Live paid previews use the
+   * highest supported level to demonstrate the production-quality path. */
+  thinkingLevel?: "high" | "max";
   /** Evaluator-owned fault profile. It is accepted only by an isolated
    * APP_ENV=evaluation runtime with matching instance credentials. */
   evaluationFault?: {

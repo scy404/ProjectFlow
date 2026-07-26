@@ -66,10 +66,14 @@ export class IsolatedProcessPair {
   private backendProcess: ChildProcess | null = null;
   private sidecarProcess: ChildProcess | null = null;
   private diagnosticBuffer = "";
+  private sensitiveValues: string[] = [];
 
   private captureDiagnostics(process: ChildProcess, label: string): void {
     const append = (chunk: unknown) => {
-      const value = String(chunk);
+      let value = String(chunk);
+      for (const sensitive of this.sensitiveValues) {
+        value = value.split(sensitive).join("[REDACTED]");
+      }
       if (label === "backend" && !value.includes("ERROR")) return;
       this.diagnosticBuffer = `${this.diagnosticBuffer}${label}: ${value}`.slice(-32_768);
     };
@@ -81,11 +85,17 @@ export class IsolatedProcessPair {
     return this.diagnosticBuffer;
   }
 
-  async start(projectRoot: string, model = "mock:mock-model"): Promise<void> {
+  async start(projectRoot: string, model = "mock:mock-model", credential?: { envVar: string; value: string }): Promise<void> {
     this.nonce = randomBytes(16).toString("hex");
     this.instanceId = randomBytes(16).toString("hex");
     this.adminToken = randomBytes(16).toString("hex");
     this.internalServiceToken = randomBytes(16).toString("hex");
+    this.sensitiveValues = [
+      this.nonce,
+      this.instanceId,
+      this.adminToken,
+      this.internalServiceToken,
+    ];
 
     this.tempRoot = await mkdtemp(join(tmpdir(), "projectflow-eval-"));
     await mkdir(join(this.tempRoot, "uploads"), { recursive: true });
@@ -117,6 +127,29 @@ export class IsolatedProcessPair {
       encoding: "utf-8",
       mode: 0o600,
     });
+
+    // T46 C1: inject selected credential into evaluator-owned temp dotenv.
+    // Only the declared apiKeyEnvVar is written; no other host secrets are
+    // inherited. File is 0600; tempRoot cleanup deletes it on destroy.
+    const dotenvPath = join(this.tempRoot, ".env");
+    if (credential && credential.value) {
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(credential.envVar)) {
+        throw new Error("评测 credential env var 名称非法");
+      }
+      if (
+        credential.value.length === 0
+        || credential.value.includes("\0")
+        || credential.value.includes("\r")
+        || credential.value.includes("\n")
+      ) {
+        throw new Error(`评测 credential ${credential.envVar} 格式非法`);
+      }
+      this.sensitiveValues.push(credential.value);
+      await writeFile(dotenvPath, `${credential.envVar}=${JSON.stringify(credential.value)}\n`, {
+        encoding: "utf-8",
+        mode: 0o600,
+      });
+    }
 
     this.backendPort = await findFreePort();
     this.sidecarPort = await findFreePort();

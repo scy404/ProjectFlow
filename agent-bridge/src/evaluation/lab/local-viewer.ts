@@ -28,6 +28,7 @@ import { createServer, type Server, type IncomingMessage, type ServerResponse } 
 import { EvaluationInfrastructureError, EvaluationValidationError } from "./errors.js";
 import {
   type VerifiedArtifact,
+  computeArtifactFingerprint,
 } from "./schema-migration.js";
 import {
   buildShowcaseBundleInMemory,
@@ -36,6 +37,7 @@ import {
   type BundleReleaseVerdict,
   type BundleHardGates,
   type BundleCostBucket,
+  type ShowcaseBundle,
 } from "./showcase-bundle.js";
 import type { EvaluationArtifact, Grade, ScenarioObservation } from "./contract.js";
 
@@ -102,10 +104,12 @@ export interface ViewerPayload {
       failures: string[];
     }>;
   };
-  // The portable bundle fingerprint, computed identically to the
-  // showcase bundle. Issue #100 §3.2: "viewer 与 portable bundle 对
-  // 同一 artifact 的 verdict、计数和成本必须完全一致".
-  portableBundleFingerprint: string;
+  // The source artifact fingerprint — salt-independent, computed from
+  // artifact identity fields + integrity/evidence roots. This is what
+  // proves the viewer and a portable bundle render the SAME artifact.
+  // Issue #100 fix #4: parity is salt-independent, based on source
+  // artifact fingerprint and result roots.
+  sourceArtifactFingerprint: string;
   // Read-only notice.
   readOnlyNotice: string;
 }
@@ -169,25 +173,26 @@ export async function startLocalViewer(options: ViewerOptions): Promise<ViewerHa
   const now = options.now ?? (() => new Date().toISOString());
   const generatedAt = now();
 
-  // §3.1 Build the portable bundle IN MEMORY (NOT written to disk).
-  // The bundle is used to compute the fingerprint that proves the
-  // viewer and the portable bundle render the SAME artifact. The
-  // local viewer NEVER publishes a bundle to disk — that is the
-  // CLI's job. When the caller supplies a `salt`, we reuse it so
-  // the viewer's pseudonyms match a previously-published portable
-  // bundle byte-for-byte. Issue #100 §3.2 parity requirement. We
-  // capture the resolved salt so the /bundle route can reuse it.
-  const { bundle, bundleSha256, salt: optionsSalt } = await buildShowcaseBundleInMemory({
+  // §3.1 Build the portable bundle IN MEMORY ONCE at startup (NOT
+  //      written to disk). Issue #100 fix #4: the bundle is built and
+  //      cached at startup; the /bundle route returns this cached copy,
+  //      never re-reading variable side-channel files. This closes a
+  //      TOCTOU hole where a malicious actor could mutate auxiliary
+  //      artifact files between startup and a /bundle GET request.
+  //      The local viewer NEVER publishes a bundle to disk — that is
+  //      the CLI's job.
+  const { bundle: cachedBundle, salt: optionsSalt } = await buildShowcaseBundleInMemory({
     verified,
     projectRoot: options.projectRoot,
     now: options.now,
     salt: options.salt,
   });
-  void bundleSha256; // the bundle object itself carries integritySha256
-  // The portable bundle fingerprint is the in-memory bundle's
-  // integritySha256. The viewer exposes it so consumers can verify
-  // the viewer and a committed bundle render the same artifact.
-  const portableBundleFingerprint = bundle.integritySha256;
+  // Issue #100 fix #4: parity is based on source artifact fingerprint
+  // (salt-independent) + integrity/evidence roots, NOT on the
+  // salt-dependent bundle integritySha256. Two viewers started with
+  // different random salts for the SAME artifact MUST report the same
+  // sourceArtifactFingerprint.
+  const sourceArtifactFingerprint = computeArtifactFingerprint(verified);
 
   // §3.2 Build the local drill-down (full observations and grades).
   const localDrillDown = buildLocalDrillDown(verified.artifact);
@@ -198,12 +203,12 @@ export async function startLocalViewer(options: ViewerOptions): Promise<ViewerHa
     viewerType: "loopback_read_only",
     evidenceClass: "offline_synthetic",
     generatedAt,
-    sourceArtifact: bundle.sourceArtifact,
-    releaseVerdict: bundle.releaseVerdict,
-    hardGates: bundle.hardGates,
-    costs: bundle.costs,
+    sourceArtifact: cachedBundle.sourceArtifact,
+    releaseVerdict: cachedBundle.releaseVerdict,
+    hardGates: cachedBundle.hardGates,
+    costs: cachedBundle.costs,
     localDrillDown,
-    portableBundleFingerprint,
+    sourceArtifactFingerprint,
     readOnlyNotice: "本 viewer 为只读; 不存在 run/cancel/reset/promotion/repair 等 mutation 路由; CLI 是唯一控制面",
   };
 
@@ -216,7 +221,7 @@ export async function startLocalViewer(options: ViewerOptions): Promise<ViewerHa
   //  Any other path → 404. Any method other than GET/HEAD/OPTIONS → 405.
   const server = createServer(async (req, res) => {
     try {
-      await handleRequest(req, res, payload, verified, options.projectRoot, generatedAt, optionsSalt);
+      await handleRequest(req, res, payload, verified, cachedBundle, optionsSalt);
     } catch (error) {
       handleError(res, error);
     }
@@ -269,10 +274,16 @@ async function handleRequest(
   res: ServerResponse,
   payload: ViewerPayload,
   verified: VerifiedArtifact,
-  _projectRoot: string,
-  _generatedAt: string,
-  optionsSalt?: Buffer,
+  cachedBundle: ShowcaseBundle,
+  _optionsSalt?: Buffer,
 ): Promise<void> {
+  res.setHeader(
+    "Content-Security-Policy",
+    "default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+  );
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "no-referrer");
   // §4.1 Method check.
   if (!ALLOWED_METHODS.has(req.method ?? "")) {
     res.writeHead(405, { "Content-Type": VIEWER_CONTENT_TYPE_JSON, "Allow": "GET, HEAD, OPTIONS" });
@@ -332,21 +343,12 @@ async function handleRequest(
     return;
   }
   if (path === "/bundle") {
-    // Re-build the portable bundle IN MEMORY and return its JSON.
-    // This route exists so consumers can verify the viewer and the
-    // bundle produce identical fingerprints. The viewer NEVER writes
-    // to disk — Issue #100 §3.2: "MUST NOT provide ... any write
-    // operation". We pass the SAME salt captured at startup so the
-    // /bundle route returns byte-for-byte identical output to the
-    // initial in-memory bundle (and to any portable bundle built
-    // with the same salt).
-    const { bundle: inMemoryBundle } = await buildShowcaseBundleInMemory({
-      verified,
-      projectRoot: _projectRoot,
-      now: () => payload.generatedAt,
-      salt: optionsSalt,
-    });
-    const body = JSON.stringify(inMemoryBundle, null, 2);
+    // Issue #100 fix #4: return the ONE-TIME cached bundle built at
+    // startup. Never rebuild — this closes the TOCTOU vulnerability
+    // where a previous version re-read variable side-channel files on
+    // every GET /bundle request. The cached bundle was verified at
+    // startup and is immutable for the lifetime of this viewer session.
+    const body = JSON.stringify(cachedBundle, null, 2);
     res.writeHead(200, { "Content-Type": VIEWER_CONTENT_TYPE_JSON, "Content-Length": Buffer.byteLength(body) });
     if (isHead) { res.end(); return; }
     res.end(body);
@@ -511,9 +513,9 @@ function renderHtmlOverview(payload: ViewerPayload): string {
     })()}
   </table>
 
-  <h2>Portable Bundle Fingerprint</h2>
-  <p><code>${escape(payload.portableBundleFingerprint)}</code></p>
-  <p>此指纹与 <code>scripts/eval-lab showcase export</code> 生成的 portable bundle 指纹完全一致。</p>
+  <h2>Source Artifact Fingerprint</h2>
+  <p><code>${escape(payload.sourceArtifactFingerprint)}</code></p>
+  <p>此指纹基于 artifact 身份字段与 integrity/evidence roots，与 salt 无关。同一 artifact 的不同 viewer 或 bundle 会产出相同的 source artifact fingerprint。</p>
 
   <h2>Routes</h2>
   <ul>

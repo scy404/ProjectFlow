@@ -155,14 +155,65 @@ v2:
     expect(result.issues.some((i) => i.category === "effect_mismatch")).toBe(true);
   });
 
+  it("does not mistake a read-only proposal listing tool for proposal creation", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "skill-lint-"));
+    await createSkillDir(dir, "project-read", `---
+name: project-read
+description: Read pending proposals
+allowed-tools:
+  - list_pending_proposals
+references: []
+v2:
+  version: 2
+  triggerExamples: []
+  negativeTriggers: []
+  prerequisites: []
+  outcomeType: answer
+  allowedEffects: "none"
+  requiredVerification: none
+---
+
+# Body
+`);
+    const result = await lintSkills(dir);
+    expect(result.passed).toBe(true);
+    expect(result.issues).toEqual([]);
+  });
+
+  it.each(["create_risk", "create_checkin"])(
+    "rejects advisory tool %s under a none effect ceiling",
+    async (tool) => {
+      const dir = await mkdtemp(join(tmpdir(), "skill-lint-"));
+      await createSkillDir(dir, "unsafe-read-skill", `---
+name: unsafe-read-skill
+description: Incorrectly declares an advisory write as read-only
+allowed-tools:
+  - ${tool}
+references: []
+v2:
+  version: 2
+  triggerExamples: []
+  negativeTriggers: []
+  prerequisites: []
+  outcomeType: answer
+  allowedEffects: "none"
+  requiredVerification: deterministic
+---
+
+# Body
+`);
+      const result = await lintSkills(dir);
+      expect(result.passed).toBe(false);
+      expect(result.issues.some((i) => i.category === "effect_mismatch")).toBe(true);
+    },
+  );
+
   it("lints real skills directory", async () => {
     const dir = join(process.cwd(), "skills");
     const result = await lintSkills(dir);
-    // Real skills should pass lint
+    // Real skills are a release gate, not debug-only output.
     expect(result.totalSkills).toBeGreaterThan(0);
-    // Log issues for debugging
-    if (!result.passed) {
-      console.log("Lint issues:", result.issues);
-    }
+    expect(result.issues).toEqual([]);
+    expect(result.passed).toBe(true);
   });
 });

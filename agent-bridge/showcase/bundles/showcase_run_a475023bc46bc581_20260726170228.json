@@ -1,0 +1,482 @@
+{
+  "schemaVersion": 1,
+  "bundleId": "showcase_run_a475023bc46bc581_20260726170228",
+  "bundleType": "portable_redacted_showcase",
+  "evidenceClass": "offline_synthetic",
+  "createdAt": "2026-07-26T17:02:28.240Z",
+  "sourceArtifact": {
+    "runIdPseudonym": "run_a475023bc46bc581",
+    "preset": "golden-core",
+    "model": "mock:mock-model",
+    "status": "completed",
+    "startedAt": "2026-07-26T17:02:11.209Z",
+    "completedAt": "2026-07-26T17:02:18.818Z",
+    "integrityRootSha256": "91737377d5de9b5c6725fe3505c26c66743519350b2d199fc9dd0255e46863b2",
+    "evidenceRootSha256": "3884d84200c51a79cc55bd09053a721c67bb24ecab71a8ab38704828742a1fe9",
+    "artifactFingerprint": "7e5dbd5fc09a018adbcf3f7a78ca9bbaf240158cc751660a41f5c3b3311f2d45",
+    "evidenceClass": "offline_synthetic"
+  },
+  "releaseVerdict": {
+    "verdict": "passed",
+    "honestBaseline": "52/52",
+    "summary": "ProjectFlow Agent 在 golden-core preset 下 52/52 通过; evidence 标记为 offline/synthetic, 不代表真实生产环境表现",
+    "forbiddenClaims": [
+      "不得宣称真实用户满意度",
+      "不得宣称生产质量",
+      "不得宣称留存或生产力提升",
+      "不得宣称业务结果",
+      "本 bundle evidence 标记为 offline/synthetic, 不代表真实生产环境表现"
+    ]
+  },
+  "hardGates": {
+    "p0MutationsDetected": false,
+    "referenceZeroHardFalseFailures": false,
+    "hiddenFieldLeakageTestsPass": false,
+    "requiredScenariosNotSkippedOrExcluded": false,
+    "evidenceGraphAndChecksumsComplete": true,
+    "noSemanticJudgeRequired": true
+  },
+  "capabilityMatrix": [
+    {
+      "dimension": "domain",
+      "key": "clarification-direction",
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0,
+      "excluded": 0,
+      "infraErrors": 0,
+      "total": 6
+    },
+    {
+      "dimension": "domain",
+      "key": "stage-planning",
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0,
+      "excluded": 0,
+      "infraErrors": 0,
+      "total": 6
+    },
+    {
+      "dimension": "domain",
+      "key": "task-breakdown",
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0,
+      "excluded": 0,
+      "infraErrors": 0,
+      "total": 6
+    },
+    {
+      "dimension": "domain",
+      "key": "assignment",
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0,
+      "excluded": 0,
+      "infraErrors": 0,
+      "total": 6
+    },
+    {
+      "dimension": "domain",
+      "key": "status-read",
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "excluded": 0,
+      "infraErrors": 0,
+      "total": 5
+    },
+    {
+      "dimension": "domain",
+      "key": "checkin-risk-replan",
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0,
+      "excluded": 0,
+      "infraErrors": 0,
+      "total": 6
+    },
+    {
+      "dimension": "domain",
+      "key": "conversations-project-memory",
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0,
+      "excluded": 0,
+      "infraErrors": 0,
+      "total": 6
+    },
+    {
+      "dimension": "domain",
+      "key": "runtime-recovery-security",
+      "passed": 7,
+      "failed": 0,
+      "skipped": 0,
+      "excluded": 0,
+      "infraErrors": 4,
+      "total": 11
+    },
+    {
+      "dimension": "class",
+      "key": "normal",
+      "passed": 16,
+      "failed": 0,
+      "skipped": 0,
+      "excluded": 0,
+      "infraErrors": 0,
+      "total": 16
+    },
+    {
+      "dimension": "class",
+      "key": "negative",
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "excluded": 0,
+      "infraErrors": 0,
+      "total": 3
+    },
+    {
+      "dimension": "class",
+      "key": "boundary",
+      "passed": 11,
+      "failed": 0,
+      "skipped": 0,
+      "excluded": 0,
+      "infraErrors": 1,
+      "total": 12
+    },
+    {
+      "dimension": "class",
+      "key": "insufficient-information",
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "excluded": 0,
+      "infraErrors": 0,
+      "total": 2
+    },
+    {
+      "dimension": "class",
+      "key": "conflict",
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "excluded": 0,
+      "infraErrors": 0,
+      "total": 4
+    },
+    {
+      "dimension": "class",
+      "key": "goal-switching",
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "excluded": 0,
+      "infraErrors": 0,
+      "total": 1
+    },
+    {
+      "dimension": "class",
+      "key": "adversarial",
+      "passed": 7,
+      "failed": 0,
+      "skipped": 0,
+      "excluded": 0,
+      "infraErrors": 3,
+      "total": 10
+    },
+    {
+      "dimension": "class",
+      "key": "multi-turn",
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "excluded": 0,
+      "infraErrors": 0,
+      "total": 4
+    }
+  ],
+  "reliability": {
+    "observedTrialPassRate": 1,
+    "empiricalAllKReliability": null,
+    "passAtK": 1,
+    "modeledPassK": 0.9814814814814815,
+    "confidenceInterval": {
+      "lower": 0.9312054095871178,
+      "upper": 1
+    },
+    "evidenceSufficient": false
+  },
+  "costs": {
+    "sutCost": {
+      "amountUsd": 0,
+      "source": "versioned_price_estimate",
+      "countedAgainstSutCap": true
+    },
+    "evaluatorModelCost": {
+      "amountUsd": 0,
+      "source": "versioned_price_estimate",
+      "countedAgainstSutCap": false
+    },
+    "codingAgentCost": {
+      "amountUsd": null,
+      "source": "unknown",
+      "countedAgainstSutCap": false
+    },
+    "provenanceNote": "三类成本独立分账；ProjectFlow Agent 上限按 preset 约束；evaluator Judge/simulator 独立 ceiling；Coding Agent external/unknown；unknown 不得显示为 $0"
+  },
+  "evidenceChains": [
+    {
+      "evidenceKind": "observation",
+      "sourceIdPseudonym": "scenario_cd62a993ddaf8d75",
+      "sourceContentSha256": "01f44a6efccc4c1f3f77158ba67f44fb292f19989ad8260afc49778e7185057d",
+      "summary": "场景 scenario_cd62a993ddaf8d75 通过 (0 失败, 硬门禁 17/17)",
+      "structured": {
+        "scenarioStatus": "completed",
+        "passed": true,
+        "failureCount": 0,
+        "hardGatePass": 17,
+        "hardGateFail": 0,
+        "latencyMs": 37
+      },
+      "redacted": true
+    },
+    {
+      "evidenceKind": "observation",
+      "sourceIdPseudonym": "scenario_3105646b9b59b92d",
+      "sourceContentSha256": "6fd16bafb66a4f7928713dfc2555be60487731bc39bb0ec7b6b46343a87fa43c",
+      "summary": "场景 scenario_3105646b9b59b92d 通过 (0 失败, 硬门禁 17/17)",
+      "structured": {
+        "scenarioStatus": "completed",
+        "passed": true,
+        "failureCount": 0,
+        "hardGatePass": 17,
+        "hardGateFail": 0,
+        "latencyMs": 53
+      },
+      "redacted": true
+    },
+    {
+      "evidenceKind": "observation",
+      "sourceIdPseudonym": "scenario_2f59aa94938e1051",
+      "sourceContentSha256": "84cd39cabe03fdd7bef9e09767bab337fd104c696d8bbb37be8e0d7659c0bf6a",
+      "summary": "场景 scenario_2f59aa94938e1051 通过 (0 失败, 硬门禁 17/17)",
+      "structured": {
+        "scenarioStatus": "completed",
+        "passed": true,
+        "failureCount": 0,
+        "hardGatePass": 17,
+        "hardGateFail": 0,
+        "latencyMs": 47
+      },
+      "redacted": true
+    },
+    {
+      "evidenceKind": "observation",
+      "sourceIdPseudonym": "scenario_7729f75d81ca32b8",
+      "sourceContentSha256": "c37380f1f461dbe0141e0f27ecadced5bd83d95b0f4b25f2eb5e4b4ab04140b4",
+      "summary": "场景 scenario_7729f75d81ca32b8 通过 (0 失败, 硬门禁 17/17)",
+      "structured": {
+        "scenarioStatus": "completed",
+        "passed": true,
+        "failureCount": 0,
+        "hardGatePass": 17,
+        "hardGateFail": 0,
+        "latencyMs": 71
+      },
+      "redacted": true
+    },
+    {
+      "evidenceKind": "observation",
+      "sourceIdPseudonym": "scenario_937a7c07c8c725be",
+      "sourceContentSha256": "b18f97075709a4af47221a07c589fd11c632036165db32b0f2f0965e0439bf8d",
+      "summary": "场景 scenario_937a7c07c8c725be 通过 (0 失败, 硬门禁 17/17)",
+      "structured": {
+        "scenarioStatus": "completed",
+        "passed": true,
+        "failureCount": 0,
+        "hardGatePass": 17,
+        "hardGateFail": 0,
+        "latencyMs": 44
+      },
+      "redacted": true
+    },
+    {
+      "evidenceKind": "observation",
+      "sourceIdPseudonym": "scenario_6768aab1f89762d1",
+      "sourceContentSha256": "87755a9ffe9311256bffd78b00244e539d479556ebf21f7a2cc08ce3e9be04ff",
+      "summary": "场景 scenario_6768aab1f89762d1 通过 (0 失败, 硬门禁 17/17)",
+      "structured": {
+        "scenarioStatus": "failed",
+        "passed": true,
+        "failureCount": 0,
+        "hardGatePass": 17,
+        "hardGateFail": 0,
+        "latencyMs": 282
+      },
+      "redacted": true
+    },
+    {
+      "evidenceKind": "observation",
+      "sourceIdPseudonym": "scenario_2d5627ef214af9a8",
+      "sourceContentSha256": "d0efd30fd0c39467fa42ab90b916f12487eb5a210aa500a0a221843a7e580f9c",
+      "summary": "场景 scenario_2d5627ef214af9a8 通过 (0 失败, 硬门禁 17/17)",
+      "structured": {
+        "scenarioStatus": "failed",
+        "passed": true,
+        "failureCount": 0,
+        "hardGatePass": 17,
+        "hardGateFail": 0,
+        "latencyMs": 44
+      },
+      "redacted": true
+    },
+    {
+      "evidenceKind": "observation",
+      "sourceIdPseudonym": "scenario_2fca43ade20ebc6b",
+      "sourceContentSha256": "a2b8bd260db73f478410357029143fc62880e584193e8a583732849575dc3b86",
+      "summary": "场景 scenario_2fca43ade20ebc6b 通过 (0 失败, 硬门禁 0/0)",
+      "structured": {
+        "scenarioStatus": "failed",
+        "passed": true,
+        "failureCount": 0,
+        "hardGatePass": 0,
+        "hardGateFail": 0,
+        "latencyMs": 7
+      },
+      "redacted": true
+    },
+    {
+      "evidenceKind": "observation",
+      "sourceIdPseudonym": "scenario_f2f0abba47714404",
+      "sourceContentSha256": "7b7f773813ba799ed5d56acd3890ef4a6298b33b2837c938c44ae8313aa2cc88",
+      "summary": "场景 scenario_f2f0abba47714404 通过 (0 失败, 硬门禁 17/17)",
+      "structured": {
+        "scenarioStatus": "completed",
+        "passed": true,
+        "failureCount": 0,
+        "hardGatePass": 17,
+        "hardGateFail": 0,
+        "latencyMs": 49
+      },
+      "redacted": true
+    },
+    {
+      "evidenceKind": "observation",
+      "sourceIdPseudonym": "scenario_90e9a64de7e89443",
+      "sourceContentSha256": "e2a0947fb95ceb4f06d187c09c3c59060e7e74d795225c63bf0e03aa8073d3a5",
+      "summary": "场景 scenario_90e9a64de7e89443 通过 (0 失败, 硬门禁 17/17)",
+      "structured": {
+        "scenarioStatus": "completed",
+        "passed": true,
+        "failureCount": 0,
+        "hardGatePass": 17,
+        "hardGateFail": 0,
+        "latencyMs": 69
+      },
+      "redacted": true
+    },
+    {
+      "evidenceKind": "calibration",
+      "sourceIdPseudonym": "calibration_f414b74b628aebb0",
+      "sourceContentSha256": "7672a7b28f7d8d79b4d6af1cfbb6dd553d19eff116975d4d0de3e70b570f286a",
+      "summary": "Calibration Artifact (semantic judge used=true)",
+      "redacted": true
+    },
+    {
+      "evidenceKind": "golden_core",
+      "sourceIdPseudonym": "golden_core_4de42c2ea6f22354",
+      "sourceContentSha256": "91737377d5de9b5c6725fe3505c26c66743519350b2d199fc9dd0255e46863b2",
+      "summary": "Golden Core run: 52/52 通过",
+      "redacted": true
+    }
+  ],
+  "issueClusters": [],
+  "repairPacketSummaries": [],
+  "diagnosisSummaries": [],
+  "regressionClosure": {
+    "closedRegressions": 0,
+    "openRegressions": 0,
+    "candidateRegressionsPreserved": 0,
+    "autoPromotionPerformed": false
+  },
+  "coverage": {
+    "canonicalScenarios": 52,
+    "p0MandatoryCategories": 8,
+    "robustnessVariantKinds": 6,
+    "goldenCoreFrozenAt": null,
+    "goldenCoreRegistryFingerprint": null
+  },
+  "skips": [],
+  "exclusions": [],
+  "infraErrors": [
+    {
+      "scenarioIdPseudonym": "scenario_6768aab1f89762d1",
+      "reason": "terminal_status_failed (latencyMs=282)",
+      "kind": "infra_error"
+    },
+    {
+      "scenarioIdPseudonym": "scenario_2d5627ef214af9a8",
+      "reason": "terminal_status_failed (latencyMs=44)",
+      "kind": "infra_error"
+    },
+    {
+      "scenarioIdPseudonym": "scenario_2fca43ade20ebc6b",
+      "reason": "terminal_status_failed (latencyMs=7)",
+      "kind": "infra_error"
+    },
+    {
+      "scenarioIdPseudonym": "scenario_feee4e7056d1aac5",
+      "reason": "terminal_status_failed (latencyMs=42)",
+      "kind": "infra_error"
+    }
+  ],
+  "calibration": {
+    "calibrationArtifactPresent": true,
+    "semanticJudgeUsed": true,
+    "activeStandardsPromoted": 0,
+    "candidateStandardsCount": 0,
+    "conflictCatalog": {
+      "totalPatterns": 6,
+      "resolved": 0,
+      "unresolved": 0
+    }
+  },
+  "retention": {
+    "preserve": [
+      "failed",
+      "needs_review",
+      "repair_packet",
+      "promoted_baseline",
+      "referenced_by_bundle"
+    ],
+    "autoDeletionPerformed": false,
+    "reportPath": "agent-bridge/showcase/retention/run_a475023bc46bc581.json"
+  },
+  "artifactProvenance": {
+    "evaluatorVersion": "t46-slice0-v1",
+    "publicSeamVersion": "http-sse-v1",
+    "platform": "darwin",
+    "architecture": "arm64",
+    "nodeVersion": "24.15.0",
+    "code": {
+      "gitCommit": "436bdcc2dd7af23fdbc1be9e41c185b2ab361832",
+      "gitDirty": true,
+      "worktreeSha256": "9e31c1a83e8e7ed0b5c60638dee7bfe664d4359fcbb185a40e9e24bd178f3bb7"
+    },
+    "scenarioContractsSha256": "63bd7b8b71de6fcfd6bebed9ef9683d02bfcfb5a9a473bb64623e1dda4577dfb",
+    "modelConfigSha256": "35b02a29ec9e8734f018a07f07d508257e2abf345faa74d8bf3c790f7bac53ec"
+  },
+  "bundleProvenance": {
+    "bundleSchemaVersion": 1,
+    "bundleType": "portable_redacted_showcase",
+    "generatorVersion": "t46-slice5-v1",
+    "generatedAt": "2026-07-26T17:02:28.240Z",
+    "sourceArtifactFingerprint": "7e5dbd5fc09a018adbcf3f7a78ca9bbaf240158cc751660a41f5c3b3311f2d45",
+    "pseudonymSaltSha256": "d4c853661f8c7721c418d48a05e812087830e77fe908e59519e32dbfa69c58ca",
+    "migrationsApplied": []
+  },
+  "integritySha256": "0904064f7618693e8285a8358d15f5b6ac5c1551c36731841d081d16c325a5bc"
+}

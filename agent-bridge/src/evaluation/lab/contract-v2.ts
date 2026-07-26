@@ -123,6 +123,11 @@ export interface PrivacyConstraint {
    * be absent from the adversary snapshot (or have content_visible=false).
    * This is the canonical subject-and-owner privacy check. */
   subjectAndOwnerHiddenFromAdversary?: boolean;
+  /** If true, the primary snapshot must contain at least one private
+   * conversation, and NONE of the primary viewer's private conversations
+   * may appear in the adversary snapshot. This is a stronger check than
+   * adversaryCannotSeeConversationIds (which lists specific IDs). */
+  privateConversationsHiddenFromAdversary?: boolean;
   /** If true, raw IDs (UUIDs and raw user_id/task_id strings collected
    * from the before-state) must NOT appear in observation.output. */
   forbidRawIdsInOutput?: boolean;
@@ -145,6 +150,13 @@ export interface IdempotencyConstraint {
   repeats: number;
   /** Maximum new side_effect_facts entries allowed per repeat. Default 0. */
   maxNewSideEffectsPerRepeat?: number;
+}
+
+export interface MemoryTypeVisibilityConstraint {
+  /** Required memory_type + visibility pairs that MUST exist in primary snapshot. */
+  required?: Array<{ memoryType: string; visibility: string; sourceType?: string; newSinceBefore?: boolean }>;
+  /** Forbidden memory_type + visibility pairs that MUST NOT exist in primary snapshot. */
+  forbidden?: Array<{ memoryType: string; visibility: string }>;
 }
 
 export interface RunExpectation {
@@ -190,6 +202,15 @@ export interface HardGraderContract {
   readOnlyStatePurity?: boolean;
   /** Idempotency: re-run the seam and assert no new side effects. */
   idempotency?: IdempotencyConstraint;
+  /** Memory type + visibility assertions on the primary snapshot.
+   * Used to verify deterministic memory extraction (e.g., direction_card_confirmed
+   * memory with visibility=team). */
+  memoryTypeVisibility?: MemoryTypeVisibilityConstraint;
+  /** Proposal facts unchanged: if true, the primary snapshot's proposal_facts
+   * must be identical (by stable normalized comparison) to the before snapshot's
+   * proposal_facts. Fail-closed when beforeSnapshot is missing. Used to verify
+   * that a run produced zero new/replaced/deleted proposal records. */
+  proposalFactsUnchanged?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -270,6 +291,10 @@ export interface EventFacts {
 export interface MemoryFacts {
   memory_id: string;
   memory_type: string;
+  /** Non-secret source_type from ProjectMemory.source_type (e.g.
+   * "direction_card_confirmed", "proposal_rejected"). May be null
+   * for legacy memories created before source_type tracking. */
+  source_type: string | null;
   scope: string;
   status: string;
   visibility: string;
@@ -372,6 +397,8 @@ export type HardGraderName =
   | "privateConversationVisibility"
   | "teamHistoryVisibility"
   | "projectMemoryVisibility"
+  | "memoryTypeVisibility"
+  | "proposalFactsUnchanged"
   | "subjectAndOwnerPrivacy"
   | "rawIdLeakage"
   | "hiddenFieldLeakage";

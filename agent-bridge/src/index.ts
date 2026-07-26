@@ -27,8 +27,15 @@ function loadDotEnv(path: string, options: { overwrite?: boolean } = {}): void {
         val = before;
       }
     }
-    // Strip matching surrounding quotes
-    if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+    // Decode double-quoted values using JSON escaping. This lets the
+    // evaluator write one selected credential without dotenv injection.
+    if (val.startsWith('"') && val.endsWith('"')) {
+      try {
+        val = JSON.parse(val) as string;
+      } catch {
+        continue;
+      }
+    } else if (val.startsWith("'") && val.endsWith("'")) {
       val = val.slice(1, -1);
     }
     if (key && (options.overwrite || !(key in process.env))) {
@@ -37,7 +44,13 @@ function loadDotEnv(path: string, options: { overwrite?: boolean } = {}): void {
   }
 }
 
-const envPath = resolve(import.meta.dirname ?? process.cwd(), "../.env");
+// T46 C1 §1: when DOTENV_PATH is set (evaluation isolation), load ONLY
+// that file — never fall back to the repo .env. The evaluator-owned temp
+// dotenv is 0600 and contains only the selected credential(s) for the
+// model under test. Without DOTENV_PATH, load the repo .env as before.
+const envPath = process.env.DOTENV_PATH
+  ? resolve(process.env.DOTENV_PATH)
+  : resolve(import.meta.dirname ?? process.cwd(), "../.env");
 loadDotEnv(envPath); // Startup: don't overwrite existing env vars
 
 import { createServer } from "./server/app.js";

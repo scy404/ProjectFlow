@@ -2,25 +2,39 @@
 
 > Issue：[#100](https://github.com/wubq511/ProjectFlow/issues/100)
 >
-> 状态：2026-07-20 本地实现完成于分支 `glm/t46-100-showcase-closeout`（基于 `main` `8d80b79`）。本地 commit `feat(evaluation): ship evidence-backed showcase and T46 closeout`。未 push、未 merge、未关闭 Issue #100 或父 Issue #93。
+> 状态：2026-07-27 跨 Slice 审查与 C1/C2 证据归一化已完成。Post-review Golden Core mock evidence 52/52（`run_1785085331148`，integrity `91737377d5de9b5c6725fe3505c26c66743519350b2d199fc9dd0255e46863b2`）；C1 paid Flash preview 与 C2 三个 real acceptance slots 均通过；第二批 capability metadata、independent shell adapters、known-fault chain、preview/extension/promotion/privacy hardening 已验证。#100/#93 技术关闭门禁已满足，当前仅剩 push、merge 与关闭 Issue。
 >
-> 边界：#100 在 #99 的 Golden Core 之上补齐两个只读展示面（portable committed redacted showcase bundle + loopback-only local read viewer）、live preview、schema/provenance 校验、retention planning 与 Agent-first acceptance。不重新设计评测系统；基于现有 immutable result graph、artifact store、CLI 和 Agent Skill 扩展。保留 Golden Core public-seam mock 基线 30/52 的真实回归证据；不弱化 hard grader、不改写 Golden truth、不删除失败场景、不把 regression 显示为 pass、不自动 promotion。
+> 边界：#100 在 #99 的 Golden Core 之上补齐两个只读展示面（portable committed redacted showcase bundle + loopback-only local read viewer）、live preview、schema/provenance 校验、retention planning 与 Agent-first acceptance。不重新设计评测系统；基于现有 immutable result graph、artifact store、CLI 和 Agent Skill 扩展。Golden Core S1–S6 candidate changes 已批准并实现；post-review mock final evidence 为 52/52（run `run_1785085331148`）。不弱化 hard grader、不改写 Golden truth、不删除失败场景、不把 regression 显示为 pass、不自动 promotion。
 
 ## 交付结论
 
-Issue #100 已实现 6 项 acceptance criteria：
+Issue #100 已实现 6 项 acceptance criteria（第一批），第二批正在进行：
+
+**第一批（2026-07-20，已提交）：**
 
 1. **两个只读展示面消费同一 immutable result graph**：`showcase-bundle.ts` 产出 portable committed redacted showcase bundle（`agent-bridge/showcase/bundles/<bundleId>.json`，可 `git add -f` 提交）；`local-viewer.ts` 产出 loopback-only（`127.0.0.1`/`::1`）HTTP 只读 viewer。两者都通过 `schema-migration.ts` 的 `verifyAndMigrateArtifact` 消费同一 `VerifiedArtifact`，不重新计算 grade、不修改 artifact、不调用 LLM。
 
-2. **Live preview + 原子发布 + 预览标签**：`live-preview.ts` 使用 smoke SUT 上限 `$0.10`、`preview_` runId 前缀、`preview_label.json` 标记文件；`publishImmutable` 使用 hard-link 原子发布（EEXIST → fail-closed），`allowOverwrite: true` 仅在测试或显式覆盖路径使用；付费模型在冻结价格表与调用前最坏成本预估前继续 fail-closed（`PAID_MODEL_REMAINING_GATES` 4 项门禁）。
+2. **Live preview + 原子发布 + 预览标签**：`live-preview.ts` 使用 smoke SUT 上限 `$0.10`、`preview_` runId 前缀、`preview_label.json` 标记文件；`publishImmutable` 使用 hard-link 原子发布（EEXIST → fail-closed），`allowOverwrite: true` 仅在测试或显式覆盖路径使用。6 个 pre-call gate 检查 price table existence/fingerprint/freshness、model entry、worst-case cap 与 credential；post-run 再检查 resolved model、provider telemetry、target window 与 artifact status。**C1 真实 preview 已完成**：`preview_1785081515993_65e5a2e7d014e164`，status completed，3/3 passed，149395ms（约 2.5 分钟），windowMet=true，SUT $0.0054107256 provider_reported，17 requests，15561 input / 16871 output tokens，resolved deepseek:deepseek-v4-flash by sidecar_health，worst-case $0.0462，cap $0.10，integrity root `2d8746b78305a35ec425c76c32b4fcbd0930b583c4f5b006d10117b9dd37cf3e`，remainingGates=[]。Flash ＜ $0.10 通过；Pro worst-case $0.14355 ＞ $0.10 → pre-call fail-closed。普通 paid run 仍 fail-closed，只有 dedicated bounded preview 允许 Flash。价格表来源：<https://api-docs.deepseek.com/quick_start/pricing>。Coding Agent costs never count against SUT。
 
 3. **Schema/hash/provenance 校验 + 确定性 migration + unknown-schema fail-closed**：`schema-migration.ts` 的 `verifyAndMigrateArtifact` 先读 `integrity.json`，验证 `sha256(reportRaw) === integrity.reportSha256` 后再解析 `report.json`；`verifyResultGraph` 检查 entries、evidence root、integrity root；`verifyProvenance` 检查 provenance 字段。`SUPPORTED_SOURCE_SCHEMA_VERSIONS = [1]`、`PRESENTATION_SCHEMA_VERSION = 1`、`MIGRATIONS` 为空（V1 无需迁移）。`assertSupportedSchema` 对未知 schema version fail-closed。
 
-4. **只读 retention planning + zero-deletion + preserve markers**：`retention-planner.ts` 的 `buildRetentionReport` 扫描所有 artifact runs 与 showcase bundles，标记 11 类 preserve reasons（`status_failed`、`status_needs_review`、`status_partial_budget`、`contains_repair_packet`、`contains_diagnosis`、`contains_counterfactual`、`contains_calibration_artifact`、`contains_promotion_approval`、`referenced_by_showcase_bundle`、`is_promoted_baseline`、`preview_run`）。V1 policy 为 `v1-no-deletion`：所有 runs 标记 `eligibleForCleanup` 但不自动删除。`publishRetentionReport` 原子发布到 `agent-bridge/showcase/retention/retention-report.json`。
+4. **只读 retention planning + zero-deletion + preserve markers**：`retention-planner.ts` 的 `buildRetentionReport` 扫描所有 artifact runs 与 showcase bundles，标记 11 类 preserve reasons。V1 policy 为 `v1-no-deletion`：所有 runs 标记 `eligibleForCleanup` 但不自动删除。
 
-5. **Agent-first acceptance harness**：`agent-acceptance.ts` 为 3 个 shell agent profile（`codex`、`claude-code`、`trae-equivalent`）各定义 7 步确定性 CLI 命令映射（discover/validate/run/status/verify/show/repair-packet）。harness 通过 `execFileSync("bash", [scriptPath, ...command])` 执行每个命令，捕获 stdout/stderr/exit code，验证 expected JSON fields 存在。harness 永不调用真实 LLM agent——它通过运行 CLI 命令模拟 agent。所有运行使用 `mock:mock-model`，从不调用付费模型。
+5. **Shell contract acceptance harness**：`agent-acceptance.ts` 为 3 个 shell agent profile（`codex`、`claude-code`、`trae-equivalent`）各定义 7 步确定性 CLI 命令映射。harness 通过 `execFileSync("bash", [scriptPath, ...command])` 执行每个命令，捕获 stdout/stderr/exit code，验证 expected JSON fields 存在。**harness 永不调用真实 LLM agent**——它通过运行 CLI 命令模拟 agent。所有运行使用 `mock:mock-model`。输出携带 `shellContractPassed` 和 `realAgentEvidence: false`，不宣称真实 agent 验收。
 
-6. **诚实 Golden Core 基线保留**：showcase bundle 的 `releaseVerdict` 与 `honestBaseline` 字段如实报告原始 run 的 pass/fail 状态。Golden Core public-seam mock 基线 30/52 的失败场景被保留在 showcase bundle 的 evidence chains 中，不通过弱化 grader 或改写 Golden truth 消除。`retention-planner` 将 `status_failed` 的 runs 标记为 preserve，防止清理。
+6. **诚实 Golden Core 基线更新**：showcase bundle 的 `releaseVerdict` 与 `honestBaseline` 字段如实报告原始 run 的 pass/fail 状态。跨 Slice 修复后的 Golden Core mock final evidence 为 52/52（post-review run `run_1785085331148`，integrity `91737377d5de9b5c6725fe3505c26c66743519350b2d199fc9dd0255e46863b2`）。不通过弱化 grader 或改写 Golden truth 消除失败场景。
+
+**C1 真实 preview 与 C2 real agent acceptance（2026-07-26/27，已完成）：**
+
+- **Capability metadata 事实源**：删除 `inferCapabilityDomain`/`inferScenarioClass` heuristic。为 demo/smoke/smoke-v2/full/golden-core 所有 ScenarioContract 建立显式版本化 metadata 事实源（`capabilityDomain` + `scenarioClass`），一场景恰一条；缺失/重复/unknown fail-closed。Golden join frozen registry，验证 registry/observations/grades 唯一且对齐；completed/regression observation set == canonical set；partial_budget 未运行 canonical 显式计 skipped/partial。
+
+- **Shell acceptance 独立 adapter**：三个 profile 使用独立命令映射（共享 primitive，非三份相同静态数组）。保留 7 个基础能力。新增 evaluator-owned known-fault run：run failing fixture → diagnose → repair-packet list → 选 indexed packet → --packet-id prompt；empty/unindexed/no prompt 必须失败。不依赖 Golden 当前失败，不调用付费/真实 LLM，不污染 Golden registry。
+
+- **Preview 断言修复**：windowMet 标签一致性修复（label 与 result 使用同一 `actualRemainingGates`）。CLI JSON 输出包含 `targetWindowMs`、`actualDurationMs`、`windowMet`，exitCode 与真实 artifact status 一致。清理 toolchain validation 旧注释。
+
+- **C1 真实 paid preview**：`preview_1785081515993_65e5a2e7d014e164`，status completed，3/3，149395ms，windowMet=true，SUT $0.0054107256，integrity `2d8746b78305a35ec425c76c32b4fcbd0930b583c4f5b006d10117b9dd37cf3e`，remainingGates=[]。
+
+- **C2 真实 agent acceptance**：三个 coding agent real acceptance slots 已完成，audited summary 路径 `agent-bridge/artifacts/agent-acceptance-real/audited-summary-20260726.json`，integritySha256 `d29955085d78500f186f9f636a423ce6b5e2421a2347c1f8cc5d92627d7b2c7e`，c2AuditedVerdict.passed=true。
 
 ## 核心实现
 
@@ -57,9 +71,9 @@ Issue #100 已实现 6 项 acceptance criteria：
 - **Budget**：`LIVE_PREVIEW_SUT_CEILING_USD = 0.10`（与 smoke preset 相同）。`buildPreviewBudget` 构造 smoke-equivalent budget。
 - **RunId prefix**：`LIVE_PREVIEW_RUN_ID_PREFIX = "preview_"`。runId 格式为 `preview_<timestamp>_<sha8>`。
 - **Preview label**：`LIVE_PREVIEW_LABEL_FILE = "preview_label.json"`。label 文件记录 `runId`、`createdAt`、`isPreview: true`、`sourceCommand: "preview"`。
-- **Model gate**：`verifyPreviewModelGate` 检查 4 项门禁（`PAID_MODEL_REMAINING_GATES`）：`frozen_pricing_table`、`pre_call_worst_case_cost`、`provider_api_key_present`、`sut_cost_under_ceiling`。付费模型在冻结价格表与调用前最坏成本预估前继续 fail-closed。
-- **Honest duration**：`runLivePreview` 记录真实 `durationMs`，不 sleep、不 fake latency。
-- **Skip toolchain validation**：`runLivePreview` 调用 `runEvaluation` 时传入 `skipToolchainValidation: true`，跳过 Node 版本检查（因为 preview 是 operator-facing 命令，不需要 toolchain 一致性）。
+- **Model gate**：`verifyPreviewModelGate` 检查 6 个 pre-call gate（price table existence/fingerprint/freshness、model entry、worst-case cap、credential），运行后再检查 resolved model、provider telemetry、target window 与 artifact status。普通 paid run 继续 fail-closed；dedicated preview 仅允许冻结表覆盖且 worst-case ≤ `$0.10` 的模型。
+- **Honest duration**：`runLivePreview` 记录真实 `durationMs`，不 sleep、不 fake latency。**C1 真实 preview 结果**：`windowMet: true`，`actualDurationMs: 149395`（约 2.5 分钟），`targetWindowMs: [120000, 300000]`（2–5 分钟窗口），`remainingGates: []`。
+- **Preview label**：`PreviewLabel` 记录 `remainingGates`（actualRemainingGates，包含 mock_preview_target_window_not_met）、`targetWindowMs`、`actualDurationMs`、`windowMet`。
 
 ### Retention planning
 
@@ -71,17 +85,18 @@ Issue #100 已实现 6 项 acceptance criteria：
 - **Report structure**：`RetentionReport` 包含 `schemaVersion`、`policyVersion`、`generatedAt`、`runs`（每个 run 的 `runId`、`runDir`、`sizeBytes`、`fileCount`、`startedAt`、`completedAt`、`ageDays`、`status`、`preset`、`hasRepairPacket`、`hasDiagnosis`、`hasCounterfactual`、`hasCalibrationArtifact`、`hasPromotionApproval`、`isPreview`、`referencedByShowcase`、`preserve`、`preserveReasons`、`eligibleForCleanup`、`summary`）、`bundles`（每个 bundle 的 `bundleId`、`bundlePath`、`sizeBytes`、`createdAt`、`sourceRunId`、`referencedByOther`、`preserve`、`eligibleForCleanup`、`summary`）、`integritySha256`。
 - **Publish**：`publishRetentionReport` 原子发布到 `agent-bridge/showcase/retention/retention-report.json`。
 
-### Agent-first acceptance harness
+### Shell contract acceptance harness
 
 `agent-acceptance.ts` 为 3 个 shell agent profile 产出确定性 acceptance 报告：
 
 - **Profiles**：`codex`、`claude-code`、`trae-equivalent`。每个 profile 指向同一 `SKILL_MD_PATH = ".agents/skills/evaluation-lab/SKILL.md"`。
-- **7-step mapping**：`discover`（`list --json`）、`validate`（`validate --preset smoke --model mock:mock-model`）、`run`（`run --preset smoke --model mock:mock-model --json`）、`status`（`status <runId>`）、`verify`（`verify <runId>`）、`show`（`show <runId>`）、`repair-packet`（`repair-packet <runId> --json`）。
-- **Execution**：`runAgentAcceptance` 通过 `execFileSync("bash", [scriptPath, ...command])` 执行每个命令，捕获 stdout/stderr/exit code。`runId` 从 `run` 步骤的 JSON 输出提取，代入后续步骤。
-- **JSON field verification**：`expectsJson = Boolean(mapping.expectedJsonFields && mapping.expectedJsonFields.length > 0)`。当 `expectedJsonFields` 指定时，harness 验证 stdout 中至少一行 JSON 包含所有 expected fields（支持 event-stream 多行 JSON，取 union）。
+- **独立 adapter**：三个 profile 使用**不同的**命令映射（codex: `--flag=value` 风格；claude-code: `-f value` 短标志；trae-equivalent: `--flag value` 空格分隔）。共享 primitive（step execution、JSON parsing、result publishing），非三份相同静态数组。
+- **7-step mapping**：`discover`（list）、`validate`、`run`、`status`、`verify`、`show`、`repair-packet`。命令细节因 profile 不同而异。
+- **输出标记**：`shellContractPassed: true/false`、`realAgentEvidence: false`。不宣称真实 Codex/Claude Code/Trae agent 验收。
+- **Known-fault chain**：`runKnownFaultChain` 执行 evaluator-owned known-fault run：run failing fixture → diagnose → repair-packet list → 选 indexed packet → --packet-id prompt。empty/unindexed/no prompt 必须失败。不依赖 Golden 当前失败，不调用付费/真实 LLM，不污染 Golden registry。
+- **Execution**：`runAgentAcceptance` 通过 `execFileSync("bash", [scriptPath, ...command])` 执行每个命令，捕获 stdout/stderr/exit code。
 - **No LLM invocation**：harness 永不调用真实 LLM agent——它通过运行 CLI 命令模拟 agent。所有运行使用 `mock:mock-model`。
-- **Report**：`AgentAcceptanceResult` 包含 `schemaVersion`、`profile`、`displayName`、`passed`、`skillMdPresent`、`skillMdSha256`、`steps`（每个步骤的 `stepId`、`naturalLanguage`、`command`、`expectedExitCode`、`actualExitCode`、`stdout`、`stderr`、`passed`、`failureReason`、`jsonFieldsPresent`、`jsonFieldsMissing`、`durationMs`）、`runId`、`runReportPath`、`repairPacketPath`、`startedAt`、`completedAt`、`durationMs`、`integritySha256`。
-- **Publish**：`publishAgentAcceptanceReport` 原子发布到 `agent-bridge/showcase/agent-acceptance/acceptance-report.json`。
+- **Report**：`AgentAcceptanceResult` 包含 `schemaVersion`、`profile`、`displayName`、`shellContractPassed`、`realAgentEvidence: false`、`passed`（deprecated 别名）、`skillMdPresent`、`skillMdSha256`、`steps`、`integritySha256`。
 
 ## Operator/Coding Agent commands
 
@@ -133,21 +148,22 @@ scripts/eval-lab agent-acceptance --profile all --json
 
 **Test file:**
 
-- `agent-bridge/tests/unit/t46-7-showcase-closeout.test.ts` (~1543 lines, 101 tests) — 18 个测试章节：§2 Schema migration (9 tests)、§3 Portable showcase bundle (8 tests)、§4 Redaction attacks (5 tests)、§5 Bundle-scoped pseudonyms (6 tests)、§6 Viewer ↔ bundle parity (2 tests)、§7 No grade recomputation (3 tests)、§8 Loopback-only binding (5 tests)、§9 Viewer no mutation routes (10 tests)、§10 Atomic preview publish (7 tests)、§11 Schema migration explicitness (3 tests)、§12 Future schema fail-closed (4 tests)、§13 Malformed artifact fail-closed (6 tests)、§14 Retention planning (8 tests)、§15 Agent-first acceptance profiles (9 tests)、§16 Cost bucket truthfulness (4 tests)、§17 Live preview model gate (7 tests)、§18 CLI smoke (3 tests)。
+- `agent-bridge/tests/unit/t46-7-showcase-closeout.test.ts` — 初始 18 个测试章节在跨 Slice hardening 后扩展为 224 tests，覆盖 schema migration、portable/redaction/pseudonym、viewer parity/只读、preview 原子性与 paid gates、retention、shell/known-fault acceptance、extension integrity 和 malformed artifact fail-closed。
 
 ## Verification
 
+**第一批（2026-07-20）：**
 - **Agent Bridge tests**：2346 passed / 10 failed（全部 10 个失败是预存在的 `t46-3-presets-contract.test.ts` Node 版本不匹配，与 #100 无关）。
 - **Typecheck**：`npm run typecheck` 通过（无错误）。
 - **Build**：`npm run build` 通过（无错误）。
-- **Real CLI regression**：
-  - `golden-core verify`：52 个 canonical scenarios，fingerprint `e9fb97e3742e3c71dbc7cd6cfe43ec8775bbb73df43e81420c9fcdead1951c4e` 匹配。
-  - `run --preset smoke --model mock:mock-model --json`：1/1 passed，`integrityRootSha256` 生成。
-  - `showcase export <run-id> --json`：bundle 原子发布，`releaseVerdict: "passed"`，`honestBaseline: "1/1"`。
-  - `showcase verify <bundle-path>`：bundle integrity hash 匹配，redaction 完整。
-  - `retention --json`：report 生成，preserve markers 正确（`status_failed`、`preview_run`、`referenced_by_showcase_bundle` 等），V1 不自动删除。
-  - `preview --json`：`runId` 前缀 `preview_`，`durationMs: 1011`（真实，无 sleep inflation），`modelIsMock: true`，`remainingGates: []`（mock 模型全部门禁通过），`sutCost.amountUsd: 0`（在 $0.10 上限内）。
-  - `agent-acceptance --profile all --json`：3 个 profile × 7 步 = 21/21 全通过，`allPassed: true`，`exitCode: 0`。每个步骤的 `jsonFieldsPresent` 与 `jsonFieldsMissing` 正确填充。
+- **Real CLI regression**：`golden-core verify` / `run smoke` / `showcase export` / `showcase verify` / `retention` / `preview` / `agent-acceptance --profile all`（21/21）全通过。C1 真实 preview `windowMet: true`，`remainingGates: []`。
+
+**第二批与跨 Slice 收口（2026-07-25—2026-07-27）：** capability metadata、agent-acceptance all + known-fault、preview/extension/promotion hardening、typecheck/build 与三端全量门禁均已验证；最终基线见本文件末尾和 final audit。
+
+- Backend：912 passed / 4 skipped，ruff 通过。
+- Agent Bridge：2651/2651，typecheck/build 通过。
+- Frontend：333 passed / 6 skipped，lint/build 通过。
+- Golden Core：`run_1785085331148` 52/52，integrity verify 通过。
 
 ## T46 closeout 状态
 
@@ -163,9 +179,11 @@ Issue #100 是 T46 Evaluation Lab 的最后一个 ticket。本地实现完成后
 
 **未关闭项**：
 
-- Issue #100 本身未关闭（本地 commit，未 push/merge/close）。
+- Issue #100 本身未关闭（本地 commit，未 push/merge/close）。C1 真实 preview 已完成，C2 真实 agent acceptance 已完成，audited summary 已产出。
 - 父 Issue #93 未关闭。
-- Golden Core public-seam mock 基线 30/52 的剩余失败保留为最终跨 Slice 全面对抗审查与修复对齐的输入，不通过弱化 grader 消除。
-- 付费模型在冻结价格表与调用前最坏成本预估前继续 fail-closed。
+- Golden Core mock final evidence 为 52/52（post-review run `run_1785085331148`，integrity `91737377d5de9b5c6725fe3505c26c66743519350b2d199fc9dd0255e46863b2`）。S1–S6 candidate changes 已批准并实现；30/52 基线已过期。Golden Core verify 通过。
+- DeepSeek V1 价格表已冻结；普通 paid run 继续 fail-closed，dedicated Flash preview 按 `$0.10` worst-case gate 授权。
 - Active standard promotion 不在默认路径（需显式 Robert instruction + reviewable Git diff + matching fingerprints + all conflicts resolved）。
-- 跨 Slice 全面对抗审查与修复对齐按用户要求留到全部 T46 tickets 完成后统一进行（#100 完成后即可开始）。
+- Shell contract acceptance 不是真实 agent 验收：`realAgentEvidence: false`，`shellContractPassed` 只验证 CLI 命令映射。
+- C1 真实 preview：已完成，`windowMet: true`，`remainingGates: []`，integrity `2d8746b78305a35ec425c76c32b4fcbd0930b583c4f5b006d10117b9dd37cf3e`。
+- 跨 Slice 全面对抗审查与修复对齐已于 2026-07-26 完成。最终审计文档见 `docs/T46/ProjectFlow_Agent_Evaluation_Lab_Final_Audit_2026-07-26.md`。

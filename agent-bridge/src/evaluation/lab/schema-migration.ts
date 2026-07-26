@@ -39,7 +39,8 @@
  */
 
 import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { lstatSync, realpathSync } from "node:fs";
+import { join, resolve, sep, basename } from "node:path";
 import { EvaluationInfrastructureError, EvaluationValidationError } from "./errors.js";
 import { sha256, stableStringify } from "./validation.js";
 import {
@@ -167,6 +168,7 @@ export async function verifyResultGraph(
       throw new EvaluationValidationError(`integrity index 包含非法路径: ${relativePath}`);
     }
     const absolute = join(runDir, relativePath);
+    assertRegularFile(absolute, runDir);
     const content = await readFile(absolute, "utf-8");
     if (sha256(content) !== expectedHash) {
       throw new EvaluationInfrastructureError(
@@ -192,7 +194,9 @@ export async function verifyResultGraph(
     throw new EvaluationInfrastructureError("report.integrityRootSha256 与 integrity.integrityRootSha256 不一致");
   }
   // §2.4 Verify the report SHA-256 matches `report.json` on disk.
-  const reportOnDisk = await readFile(join(runDir, "report.json"), "utf-8");
+  const reportDiskPath = join(runDir, "report.json");
+  assertRegularFile(reportDiskPath, runDir);
+  const reportOnDisk = await readFile(reportDiskPath, "utf-8");
   if (sha256(reportOnDisk) !== integrity.reportSha256) {
     throw new EvaluationInfrastructureError("report.json 哈希与 integrity.reportSha256 不一致");
   }
@@ -342,23 +346,58 @@ export async function verifyAndMigrateArtifact(runDir: string, runId: string): P
   if (!runId || !/^[a-zA-Z0-9_-]+$/.test(runId)) {
     throw new EvaluationValidationError(`非法 run ID: ${String(runId)}`);
   }
-  // §1 Read and parse integrity.json.
-  const integrityRaw = await readFile(join(runDir, "integrity.json"), "utf-8");
+  // §0 Path containment (Issue #100 batch B):
+  //    a) runDir must not be a symlink (lstat).
+  //    b) canonical (realpath) basename of runDir must equal runId.
+  //    c) runId must appear as a component in the realpath.
+  const normalizedRunDir = resolve(runDir);
+  let runDirStat;
+  try {
+    runDirStat = lstatSync(normalizedRunDir);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      throw new EvaluationInfrastructureError(`runDir 不存在: ${normalizedRunDir}`);
+    }
+    throw new EvaluationInfrastructureError(`无法 stat runDir: ${(error as Error).message}`);
+  }
+  if (runDirStat.isSymbolicLink()) {
+    throw new EvaluationValidationError(`runDir 不允许为 symlink: ${normalizedRunDir}`);
+  }
+  if (!runDirStat.isDirectory()) {
+    throw new EvaluationValidationError(`runDir 必须是目录: ${normalizedRunDir}`);
+  }
+  const runDirReal = realpathSync(normalizedRunDir);
+  const canonicalBasename = basename(runDirReal);
+  if (canonicalBasename !== runId) {
+    throw new EvaluationValidationError(
+      `runDir canonical basename "${canonicalBasename}" 与 runId "${runId}" 不一致; 路径越界拒绝`,
+    );
+  }
+  const runDirComponents = runDirReal.split(sep);
+  if (!runDirComponents.includes(runId)) {
+    throw new EvaluationValidationError(
+      `runId "${runId}" 不在 runDir realpath "${runDirReal}" 中; 路径越界拒绝`,
+    );
+  }
+  // §1 Read and parse integrity.json (with lstat containment).
+  const integrityPath = join(runDirReal, "integrity.json");
+  assertRegularFile(integrityPath, runDirReal);
+  const integrityRaw = await readFile(integrityPath, "utf-8");
   let integrity: IntegrityIndex;
   try {
     integrity = JSON.parse(integrityRaw) as IntegrityIndex;
   } catch (error) {
     throw new EvaluationInfrastructureError(`integrity.json 解析失败: ${(error as Error).message}`);
   }
-  if (integrity.schemaVersion !== EVALUATION_SCHEMA_VERSION) {
-    // The integrity.json itself uses the same schema version as the
-    // artifact. Unsupported versions MUST fail-closed.
-    throw new EvaluationValidationError(
-      `integrity.json schemaVersion ${String(integrity.schemaVersion)} 不受支持; 当前支持: ${SUPPORTED_SOURCE_SCHEMA_VERSIONS.join(", ")}`,
-    );
-  }
+  // Issue #100 batch 2: use assertSupportedSchema so the code path is
+  // NOT hardcoded to current-only. When EVALUATION_SCHEMA_VERSION bumps
+  // and a migration is added, this path still works — supported older
+  // versions pass through, unknown future versions fail-closed.
+  assertSupportedSchema(integrity.schemaVersion);
   // §2 Read and parse report.json, verify its hash matches integrity.
-  const reportRaw = await readFile(join(runDir, "report.json"), "utf-8");
+  const reportPath = join(runDirReal, "report.json");
+  assertRegularFile(reportPath, runDirReal);
+  const reportRaw = await readFile(reportPath, "utf-8");
   if (sha256(reportRaw) !== integrity.reportSha256) {
     throw new EvaluationInfrastructureError("report.json 哈希与 integrity.reportSha256 不一致");
   }
@@ -368,20 +407,39 @@ export async function verifyAndMigrateArtifact(runDir: string, runId: string): P
   } catch (error) {
     throw new EvaluationInfrastructureError(`report.json 解析失败: ${(error as Error).message}`);
   }
+  // Issue #100 fix #5: the artifact's self-reported runId MUST match the
+  // caller-provided runId. This prevents cross-run artifact misidentification
+  // where artifact from run A is loaded under run B's directory.
+  if (artifact.runId !== runId) {
+    throw new EvaluationInfrastructureError(
+      `artifact runId "${artifact.runId}" 与调用方 runId "${runId}" 不匹配; 拒绝加载`,
+    );
+  }
+  // Issue #100 batch 2: the report's schemaVersion MUST match the
+  // integrity.json's schemaVersion. They are the same source version —
+  // any divergence means the artifact is corrupt or mismatched.
+  if (artifact.schemaVersion !== integrity.schemaVersion) {
+    throw new EvaluationInfrastructureError(
+      `report.json schemaVersion ${String(artifact.schemaVersion)} 与 integrity.json schemaVersion ${String(integrity.schemaVersion)} 不一致; 拒绝加载`,
+    );
+  }
   // §3 Verify the full result graph (every file hash + evidence root
-  //    + integrity root + report hash).
-  await verifyResultGraph(runDir, artifact, integrity);
+  //    + integrity root + report hash), using runDirReal for containment.
+  await verifyResultGraph(runDirReal, artifact, integrity);
   // §4 Verify provenance.
   const provenance = verifyProvenance(artifact);
-  // §5 Migrate to PRESENTATION_SCHEMA_VERSION (no-op today).
+  // §5 Migrate to PRESENTATION_SCHEMA_VERSION (no-op today, but the
+  //    code path goes through findMigrationChain which uses
+  //    SUPPORTED_SOURCE_SCHEMA_VERSIONS — independent of the hardcoded
+  //    current-only check that was removed in batch 2).
   const migration = migrateArtifact(artifact);
-  // §6 Return the verified artifact bundle.
+  // §6 Return the verified artifact bundle (using canonical realpath).
   return {
     artifact: migration.artifact,
     integrity,
     provenance,
     migrationLog: migration.migrationsApplied,
-    runDir,
+    runDir: runDirReal,
     runId,
   };
 }
@@ -397,6 +455,38 @@ function isSafeRelativePath(path: string): boolean {
   if (path.startsWith("/")) return false;
   if (path.split(/[\\/]/).includes("..")) return false;
   return true;
+}
+
+/**
+ * Assert that `filePath` is a regular file (not symlink, not directory)
+ * and its realpath is contained within `rootReal`.
+ *
+ * Issue #100 batch B: all artifact file reads must pass lstat + realpath
+ * containment before reading.
+ */
+function assertRegularFile(filePath: string, rootReal: string): void {
+  let fileStat;
+  try {
+    fileStat = lstatSync(filePath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      throw new EvaluationInfrastructureError(`artifact 文件不存在: ${filePath}`);
+    }
+    throw new EvaluationInfrastructureError(`无法 stat artifact 文件: ${(error as Error).message}`);
+  }
+  if (fileStat.isSymbolicLink()) {
+    throw new EvaluationValidationError(`artifact 文件不允许为 symlink: ${filePath}`);
+  }
+  if (!fileStat.isFile()) {
+    throw new EvaluationValidationError(`artifact 文件必须是 regular file: ${filePath}`);
+  }
+  const fileReal = realpathSync(filePath);
+  const rootPrefix = `${rootReal}${sep}`;
+  if (!fileReal.startsWith(rootPrefix) && fileReal !== rootReal) {
+    throw new EvaluationValidationError(
+      `artifact 文件真实路径越界: ${fileReal} 不在 ${rootReal} 内`,
+    );
+  }
 }
 
 /**

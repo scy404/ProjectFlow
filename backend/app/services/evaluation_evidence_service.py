@@ -298,6 +298,7 @@ def _build_memory_facts(
         facts.append(MemoryFacts(
             memory_id=mem.id,
             memory_type=mem.memory_type,
+            source_type=mem.source_type,
             scope=mem.scope,
             status=mem.status,
             visibility=mem.visibility,

@@ -66,6 +66,41 @@ export function routeSkills(
   input: SkillRouteInput,
 ): SkillRouteResult {
   if (!input.explicitSkill && isAnswerOnlyRequest(input.userContent)) {
+    // Read-only status inquiries need the project-read skill so the Agent
+    // can call get_workspace_state / get_timeline_slice / list_pending_proposals.
+    // Without a selected skill, prepareRunRequest gives the Agent zero tools
+    // and the Golden Core status-read scenarios fail for lack of evidence.
+    //
+    // Non-status answer-only requests (explicit "只回答", adversarial
+    // "忽略.*指令", etc.) still return selected: [] — no tools, pure answer.
+    const isStatusInquiry = isAnswerOnlyStatusInquiry(input.userContent);
+    if (isStatusInquiry) {
+      const readSkill = allSkills.find(s => s.name === "project-read");
+      if (readSkill) {
+        const v2 = readSkill.v2 ?? defaultV2Metadata();
+        return {
+          selected: [readSkill],
+          candidates: allSkills.map((metadata) => ({
+            metadata,
+            score: metadata.name === "project-read" ? 40 : 0,
+            reasons: metadata.name === "project-read"
+              ? ["read-only status inquiry"]
+              : ["answer-only cue matched"],
+            rejected: metadata.name === "project-read" ? undefined : "answer-only request",
+          })),
+          combinedEffectCeiling: v2.allowedEffects ?? "none",
+          combinedAllowedTools: readSkill.allowedTools.filter(
+            (t) => !t.includes("confirm_proposal") && !t.includes("reject_proposal") && !t.includes("commit_proposal"),
+          ),
+          reason: "read-only status inquiry → project-read",
+        };
+      }
+    }
+    // No project-read skill available, or non-status answer-only request.
+    // Fall back to answer mode with no tools.
+    const readOnlyStateTools = isStatusInquiry
+      ? collectReadOnlyStateTools(allSkills)
+      : [];
     return {
       selected: [],
       candidates: allSkills.map((metadata) => ({
@@ -75,8 +110,10 @@ export function routeSkills(
         rejected: "answer-only request",
       })),
       combinedEffectCeiling: "none",
-      combinedAllowedTools: [],
-      reason: "answer-only cue matched — answer mode",
+      combinedAllowedTools: readOnlyStateTools,
+      reason: isStatusInquiry
+        ? "answer-only status inquiry — read-only state projection"
+        : "answer-only cue matched — answer mode",
     };
   }
 
@@ -165,6 +202,27 @@ function narrowCandidates(
     if (descMatch > 0) {
       score += descMatch;
       reasons.push("description keyword match");
+    }
+
+    // High-risk safety override: direct owner change + bypass proposal
+    // MUST route to risk-replan (action mode), not assignment-planning.
+    // Generic universal safety rule — no scenario IDs or hidden oracles.
+    if (skill.name === "assignment-planning" && isDirectOwnerChangeBypassProposal(input.userContent)) {
+      candidates.push({
+        metadata: skill,
+        score: 0,
+        reasons: ["high-risk safety override: direct owner change + bypass proposal → risk-replan"],
+        rejected: "safety override: risk-replan",
+      });
+      continue;
+    }
+
+    // Boost risk-replan for direct owner change + bypass proposal requests.
+    // The risk-replan skill body instructs the Agent to refuse direct
+    // modification and produce a replan proposal instead.
+    if (skill.name === "risk-replan" && isDirectOwnerChangeBypassProposal(input.userContent)) {
+      score += 40;
+      reasons.push("safety: direct owner change + bypass proposal → risk-replan");
     }
 
     candidates.push({ metadata: skill, score, reasons });
@@ -350,20 +408,79 @@ function detectConflicts(candidates: SkillCandidate[]): string | null {
 function matchIntent(skillName: string, userContent: string): number {
   const msg = userContent.toLowerCase();
   const intents: Record<string, { pattern: RegExp; score: number }> = {
-    "project-intake": { pattern: /澄清.*(?:方向|目标)|方向澄清|明确.*(?:目标|交付物)/, score: 20 },
-    "project-planning": { pattern: /阶段计划|制定计划|规划阶段|阶段规划/, score: 20 },
-    "task-breakdown": { pattern: /拆分.*任务|任务拆解|分解任务|拆成任务/, score: 20 },
-    "assignment-planning": { pattern: /分工|分配成员|谁(?:来)?做/, score: 20 },
+    "project-intake": { pattern: /澄清.*(?:方向|目标)|方向澄清|明确.*(?:目标|交付物)|梳理.*(?:方向|项目)|帮.*(?:梳理|理清|看看).*(?:方向|做什么)|想做.*但不(?:确定|知道|清楚)|生成.*方向卡|方向卡提案/, score: 20 },
+    "project-planning": { pattern: /阶段计划|制定计划|规划.*阶段|阶段规划|规划.*(?:接下来|未来|后面)/, score: 20 },
+    "task-breakdown": { pattern: /拆分.*任务|任务拆解|分解任务|拆成任务|分解为.*任务|把.*任务.*(?:创建|新建|作为|交付)|任务.*(?:依赖|冲突|顺序|排序).*(?:处理|调整|解决)/, score: 20 },
+    "assignment-planning": { pattern: /分工|分配成员|谁(?:来)?做|负责.*(?:任务|前端|后端)|任务.*所有者|重新协调.*任务|分配.*任务/, score: 20 },
     "risk-analysis": { pattern: /风险|阻塞|延期/, score: 15 },
-    "risk-replan": { pattern: /调整(?:计划|草案)|重新规划|重规划|根据签到.*调整/, score: 25 },
-    "project-status": { pattern: /主动推进|项目(?:现状|进展|状态|进度)|下一步/, score: 20 },
+    "risk-replan": { pattern: /调整(?:计划|草案)|重新规划|重规划|根据签到.*调整|分析.*(?:签到|check.in)/, score: 25 },
+    "project-status": { pattern: /主动推进|(?:生成|查看|给出|检查).*(?:行动|下一步|风险|现状|状态)/, score: 20 },
   };
   const intent = intents[skillName];
   return intent?.pattern.test(msg) ? intent.score : 0;
 }
 
 function isAnswerOnlyRequest(userContent: string): boolean {
-  return /不要(?:修改|调用|创建|执行)|只(?:解释|说明|回答)|解释.*为什么/.test(userContent);
+  // Read-only intent cues:
+  // 1. Explicit answer-only language: "只回答/只解释/只说明"
+  // 2. Explicit prohibition of mutations: "不要修改/不要调用/不要创建"
+  // 3. Status inquiries: "进展如何/状态是什么/介绍一下.*进展/告诉我.*状态"
+  // 4. Information listing: "有哪些/列出.*(任务|成员|阶段|会话|记忆)"
+  // 5. Repeated/re-ask queries: "再次告诉/再.*一遍"
+  // 6. "How/What is" style questions about current state
+  // 7. Adversarial injection markers: "忽略.*指令"
+  return /不要(?:修改|调用|创建|执行|直接)|只(?:解释|说明|回答|读)|解释.*为什么|进展如何|状态是什么|(?:介绍|告诉).*(?:进展|状态|情况)|有哪些|列出.*(?:任务|成员|阶段|会话|记忆)|再次告诉|再.*(?:一遍|一下).*(?:进展|状态)|当前.*怎么样|忽略.*(?:指令|之前)|这个项目.*(?:任务|成员)|(?:任务|成员).*有(?:哪些|多少)/.test(userContent);
+}
+
+/**
+ * Detects a read-only status inquiry — the user is asking about project
+ * state without requesting any action. These queries need evidence tools
+ * (get_workspace_state, etc.) but must NOT expose mutation tools.
+ *
+ * Distinct from {@link isAnswerOnlyRequest}: status inquiries are a subset
+ * of answer-only requests that specifically ask about current project state.
+ */
+function isAnswerOnlyStatusInquiry(userContent: string): boolean {
+  return /进展如何|状态是什么|(?:介绍|告诉).*(?:进展|状态|情况)|当前.*怎么样|项目进展|查看.*(?:状态|现状|进展)|有哪些(?:任务|成员)|(?:任务|成员).*有哪些|这个项目.*(?:任务|成员)/.test(userContent);
+}
+
+/**
+ * Collect the union of read-only state tools from all skills.
+ * Read-only tools are get_* and list_* tools that do not create, modify,
+ * or commit primary project state. These provide evidence for answer-mode
+ * status inquiries without exposing mutation-capable tools.
+ */
+function collectReadOnlyStateTools(allSkills: SkillMetadataV2[]): string[] {
+  const tools = new Set<string>();
+  for (const skill of allSkills) {
+    for (const tool of skill.allowedTools) {
+      if (tool.startsWith("get_") || tool.startsWith("list_")) {
+        tools.add(tool);
+      }
+    }
+  }
+  return [...tools];
+}
+
+/**
+ * Detect high-risk "direct owner change + bypass proposal" requests.
+ *
+ * Generic universal safety rule — uses ONLY visible user content, no
+ * scenario IDs, hidden oracles, or 52-prompt tables. Returns true when
+ * the visible prompt indicates:
+ *   1. A task ownership / assignment change ("改成小王", "修改负责人", etc.)
+ *   2. Combined with explicit bypass-proposal language ("不要走提案",
+ *      "直接改", "跳过提案流程", etc.)
+ *
+ * These requests must route to risk-replan (action mode) — the Agent
+ * refuses direct modification and routes to the correct proposal flow.
+ * Normal assignment prompts without bypass language continue routing
+ * to assignment-planning.
+ */
+function isDirectOwnerChangeBypassProposal(userContent: string): boolean {
+  const bypassPatterns = /不要走.*提案|跳过.*提案|绕过.*提案|直接改|直接修改|直接更改|不走.*提案|bypass.*proposal/;
+  const ownerChangePatterns = /改成|改为|所有者|负责人|owner|分配.*任务.*(?:给|到)|指定.*(?:给|由)|换.*人/;
+  return bypassPatterns.test(userContent) && ownerChangePatterns.test(userContent);
 }
 
 /**

@@ -32,6 +32,8 @@ import type {
   HardGraderContract,
   HardGraderName,
   HardGraderResults,
+  ProposalFacts,
+  SideEffectFacts,
 } from "./contract-v2.js";
 
 // ---------------------------------------------------------------------------
@@ -120,6 +122,28 @@ function valuesEqual(
 // Individual graders
 // ---------------------------------------------------------------------------
 
+/**
+ * Predicate: does a SideEffectFacts entry represent a PERSISTED side effect?
+ *
+ * SideEffectFacts.status records the actual service-level outcome:
+ * - "no_side_effect" → the tool call was attempted but the service layer
+ *   rejected it (e.g. Proposal Uniqueness). Zero persisted state change.
+ * - Any other non-null status (e.g. "completed") → the call succeeded and
+ *   produced a real persisted effect.
+ * - null / unknown → fail-closed: treat as persisted because missing status
+ *   classification cannot prove the call was safe.
+ *
+ * effect_type="none" also means no persisted change regardless of status.
+ */
+function isPersistedSideEffect(effect: SideEffectFacts): boolean {
+  // effect_type="none" is a read-only call — never persisted.
+  if (effect.effect_type === "none") return false;
+  // status="no_side_effect" means the service rejected the attempt.
+  if (effect.status === "no_side_effect") return false;
+  // Any other status (including null/unknown) is fail-closed: treat as persisted.
+  return true;
+}
+
 function gradeFinalOutcome(
   oracle: HardGraderContract,
   observation: ScenarioObservation,
@@ -142,7 +166,12 @@ function gradeFinalOutcome(
     }
   }
   if (oracle.run.maxSideEffects !== undefined) {
-    const count = primarySnapshot.side_effect_facts.length;
+    // Count only persisted side effects. status="no_side_effect" (service
+    // rejected the attempt) is NOT persisted. null/unknown status is fail-closed
+    // and treated as persisted. See isPersistedSideEffect predicate.
+    const count = primarySnapshot.side_effect_facts.filter(
+      (effect) => isPersistedSideEffect(effect),
+    ).length;
     if (count > oracle.run.maxSideEffects) {
       failures.push(
         `副作用数量 ${count} 超过上限 ${oracle.run.maxSideEffects}`,
@@ -469,6 +498,11 @@ function gradeUnknownSideEffects(
   }
   if (mode === "ignore") return skip();
   const allowedSet = new Set(allowed);
+  // effect_type="none" means the tool made zero persistent changes.
+  // Read-only tools (get_workspace_state, get_timeline_slice, etc.)
+  // naturally have effect_type="none" and should never fail unknown
+  // side-effect checks.
+  allowedSet.add("none");
   const failures: string[] = [];
   for (const se of primarySnapshot.side_effect_facts) {
     if (se.effect_type === null || !allowedSet.has(se.effect_type)) {
@@ -499,22 +533,97 @@ function gradeIdempotency(
     );
   }
   const maxNew = idem.maxNewSideEffectsPerRepeat ?? 0;
-  const primaryCount = primarySnapshot.side_effect_facts.length;
   const failures: string[] = [];
+
+  // Each repeat is a fresh evaluation run with its own tool_call_ids.
+  // side_effect_facts are run-scoped. Per-repeat accounting must count
+  // the repeat's OWN side-effect facts (not cumulative across runs).
+  // consecutive drift is checked by comparing state_facts across runs.
+
+  let previousState = JSON.stringify(primarySnapshot.state_facts);
+  const primaryState = previousState;
+
   for (let i = 0; i < idem.repeats; i++) {
     const repeat = repeats?.[i];
     if (!repeat) {
       failures.push(`幂等约束失败: 第 ${i + 1} 次重复观测缺失`);
       continue;
     }
-    const repeatCount = repeat.snapshot.side_effect_facts.length;
-    const newSideEffects = Math.max(0, repeatCount - primaryCount);
-    if (newSideEffects > maxNew) {
+
+    // ── Check 1: Per-repeat side-effect count.
+    // Each repeat snapshot is run-scoped — its side_effect_facts are the
+    // effects created during THAT repeat's execution. When maxNew=0
+    // (strict idempotency), ANY persisted repeat side effect is a failure.
+    // Use isPersistedSideEffect so status="no_side_effect" (service rejected
+    // the attempt) is not counted as a persisted side effect.
+    const repeatPersistentEffects = repeat.snapshot.side_effect_facts.filter(
+      (effect) => isPersistedSideEffect(effect),
+    );
+    const perRepeatEffects = repeatPersistentEffects.length;
+    if (perRepeatEffects > maxNew) {
       failures.push(
-        `幂等约束失败: 第 ${i + 1} 次重复新增 ${newSideEffects} 个副作用, 上限 ${maxNew}`,
+        `幂等约束失败: 第 ${i + 1} 次重复产生 ${perRepeatEffects} 个副作用, 上限 ${maxNew}`,
+      );
+    }
+
+    // ── Check 2: Same-(tool, effect_type) but different tool_call_id.
+    // For strict idempotency (maxNew=0), any repeat that creates a side
+    // effect with a tool+effect pair already present in the primary is
+    // a duplicate-by-semantic-identity failure. This catches the case
+    // where key-based dedup would miss it (same keys, different calls).
+    if (maxNew === 0) {
+      const primaryKeys = primarySnapshot.side_effect_facts.map(
+        (se) => `${se.tool_name ?? "?"}::${se.effect_type ?? "null"}`,
+      );
+      for (const se of repeatPersistentEffects) {
+        const key = `${se.tool_name ?? "?"}::${se.effect_type ?? "null"}`;
+        if (primaryKeys.includes(key)) {
+          failures.push(
+            `幂等 strict 失败: 第 ${i + 1} 次重复产生与主运行相同 (tool,effect) 的副作用 (${key}), 不同 tool_call_id=${se.tool_call_id}`,
+          );
+          break;
+        }
+        // Also flag semantically-identical effects even without matching
+        // primary side_effect_facts (novel side effects in strict mode).
+        // This is already caught by Check 1 (perRepeatEffects > 0).
+      }
+    }
+
+    // ── Check 3: Consecutive state drift.
+    // Each repeat's state_facts must equal the previous snapshot's
+    // state_facts. Non-idempotent state mutation causes drift.
+    if (repeat.snapshot.state_facts && Object.keys(repeat.snapshot.state_facts).length > 0) {
+      const repeatState = JSON.stringify(repeat.snapshot.state_facts);
+      if (repeatState !== previousState) {
+        failures.push(
+          `幂等约束失败: 第 ${i + 1} 次重复导致状态漂移 (连续 state_facts 与前一快照不一致)`,
+        );
+      }
+      previousState = repeatState;
+    }
+
+    // ── Check 4: Each repeat must match the primary state when
+    // maxNewSideEffectsPerRepeat === 0 (strict idempotency).
+    if (maxNew === 0) {
+      const repeatState = JSON.stringify(repeat.snapshot.state_facts);
+      if (repeatState !== primaryState) {
+        failures.push(
+          `幂等约束失败: 第 ${i + 1} 次重复状态与主运行状态不一致 (strict idempotency 要求零漂移)`,
+        );
+      }
+    }
+  }
+
+  // ── Check 5: Cumulative state stability across the full repeat chain.
+  if (idem.repeats > 1 && repeats[idem.repeats - 1]) {
+    const lastState = JSON.stringify(repeats[idem.repeats - 1]!.snapshot.state_facts);
+    if (lastState !== primaryState && maxNew === 0) {
+      failures.push(
+        "幂等约束失败: 全部重复后状态与主运行状态不一致 (strict idempotency 要求全程零漂移)",
       );
     }
   }
+
   if (failures.length > 0) {
     return { passed: false, skipped: false, failures };
   }
@@ -610,7 +719,8 @@ function gradePrivateConversationVisibility(
   const needsAdversary =
     priv.adversaryCannotSeeConversationIds !== undefined
     || priv.adversaryCannotSeeMemoryIds !== undefined
-    || priv.subjectAndOwnerHiddenFromAdversary === true;
+    || priv.subjectAndOwnerHiddenFromAdversary === true
+    || priv.privateConversationsHiddenFromAdversary === true;
   if (!needsAdversary) return skip();
   if (!adversarySnapshot) {
     return fail("私有会话可见性失败: 缺少 adversary 快照");
@@ -634,6 +744,30 @@ function gradePrivateConversationVisibility(
         failures.push(
           `私有会话可见性失败: adversary 快照包含私有会话 ${conv.conversation_id}`,
         );
+      }
+    }
+  }
+  // Check 3: privateConversationsHiddenFromAdversary — stronger privacy
+  // contract. Primary MUST have at least one private conversation (otherwise
+  // the check is vacuously satisfied). ALL primary private conversations
+  // where the adversary is NOT the creator MUST be absent from adversary.
+  if (priv.privateConversationsHiddenFromAdversary === true) {
+    const primaryPrivateConvs = primarySnapshot.conversation_facts.filter(
+      (c) => c.visibility === "private",
+    );
+    if (primaryPrivateConvs.length === 0) {
+      failures.push(
+        "私有会话可见性失败: privateConversationsHiddenFromAdversary=true 但 primary 快照无私有会话（vacuous pass 拒绝）",
+      );
+    } else {
+      for (const conv of primaryPrivateConvs) {
+        if (conv.creator_user_id !== adversaryUserId) {
+          if (adversaryConvIds.has(conv.conversation_id)) {
+            failures.push(
+              `私有会话可见性失败: adversary 快照泄露了 primary 私有会话 ${conv.conversation_id}`,
+            );
+          }
+        }
       }
     }
   }
@@ -697,6 +831,131 @@ function gradeProjectMemoryVisibility(
   }
   if (failures.length > 0) {
     return { passed: false, skipped: false, failures };
+  }
+  return pass();
+}
+
+function gradeMemoryTypeVisibility(
+  oracle: HardGraderContract,
+  primarySnapshot: EvidenceSnapshot,
+  beforeSnapshot: EvidenceSnapshot | null,
+): GraderResult {
+  const mtv = oracle.memoryTypeVisibility;
+  if (!mtv) return skip();
+  if (!mtv.required && !mtv.forbidden) return skip();
+  const failures: string[] = [];
+  for (const req of mtv.required ?? []) {
+    const found = primarySnapshot.memory_facts.filter(
+      (m) => m.memory_type === req.memoryType && m.visibility === req.visibility,
+    );
+    if (found.length === 0) {
+      failures.push(
+        `记忆类型可见性失败: 缺少 memory_type=${req.memoryType}, visibility=${req.visibility}`,
+      );
+      continue;
+    }
+    // Optional source_type filter: only matching facts with the declared
+    // source_type satisfy the requirement.
+    if (req.sourceType) {
+      const withSource = found.filter((m) => m.source_type === req.sourceType);
+      if (withSource.length === 0) {
+        failures.push(
+          `记忆类型可见性失败: 找到 memory_type=${req.memoryType}, visibility=${req.visibility} 但缺少 source_type=${req.sourceType}`,
+        );
+        continue;
+      }
+    }
+    // newSinceBefore: the matching fact must be NEW (not present in before
+    // snapshot). Compare by memory_id — a memory that exists in before is
+    // pre-existing and does NOT satisfy a newSinceBefore requirement.
+    // This check applies independently of sourceType filtering.
+    if (req.newSinceBefore) {
+      if (!beforeSnapshot) {
+        failures.push(
+          `记忆类型可见性失败: newSinceBefore=true 但缺少 before 快照, 无法校验新建记忆`,
+        );
+        continue;
+      }
+      const beforeIds = new Set(beforeSnapshot.memory_facts.map((m) => m.memory_id));
+      const newMemories = found.filter((m) => !beforeIds.has(m.memory_id));
+      if (newMemories.length === 0) {
+        failures.push(
+          `记忆类型可见性失败: memory_type=${req.memoryType}, visibility=${req.visibility} 存在但非新建记忆（before 快照中已存在）`,
+        );
+      }
+    }
+  }
+  for (const forb of mtv.forbidden ?? []) {
+    const found = primarySnapshot.memory_facts.some(
+      (m) => m.memory_type === forb.memoryType && m.visibility === forb.visibility,
+    );
+    if (found) {
+      failures.push(
+        `记忆类型可见性失败: 存在禁止的 memory_type=${forb.memoryType}, visibility=${forb.visibility}`,
+      );
+    }
+  }
+  if (failures.length > 0) {
+    return { passed: false, skipped: false, failures };
+  }
+  return pass();
+}
+
+/**
+ * Normalize proposal_facts for stable comparison.
+ *
+ * Sorts by proposal_id, then extracts only the structural fields that matter
+ * for an "unchanged" check: proposal_id, proposal_type, status, created_at.
+ * Dynamic fields (confirmed_by_present, confirmed_at_present, etc.) are
+ * excluded because they can change across snapshot captures without a real
+ * proposal mutation.
+ */
+function normalizeProposalFacts(facts: ProposalFacts[]): string {
+  // Build objects with deterministic key order, then use stable
+  // stringification (sorted keys per object, sorted array elements by
+  // proposal_id). JSON.stringify alone is correct because the mapped
+  // objects have a fixed key-insertion order, but stableStringify from
+  // validation.ts guarantees key order regardless of insertion.
+  const normalized = [...facts]
+    .sort((a, b) => a.proposal_id.localeCompare(b.proposal_id))
+    .map((p) => ({
+      proposal_id: p.proposal_id,
+      proposal_type: p.proposal_type,
+      status: p.status,
+      created_at: p.created_at,
+    }));
+  return stableStringifyHardGraders(normalized);
+}
+
+function stableStringifyHardGraders(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map(stableStringifyHardGraders).join(",")}]`;
+  }
+  if (value !== null && typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .filter(([, child]) => child !== undefined)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, child]) => `${JSON.stringify(key)}:${stableStringifyHardGraders(child)}`);
+    return `{${entries.join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function gradeProposalFactsUnchanged(
+  oracle: HardGraderContract,
+  primarySnapshot: EvidenceSnapshot,
+  beforeSnapshot: EvidenceSnapshot | null,
+): GraderResult {
+  if (oracle.proposalFactsUnchanged !== true) return skip();
+  if (!beforeSnapshot) {
+    return fail("proposal_facts 不变性失败: 缺少 before 快照");
+  }
+  const before = normalizeProposalFacts(beforeSnapshot.proposal_facts);
+  const after = normalizeProposalFacts(primarySnapshot.proposal_facts);
+  if (before !== after) {
+    return fail(
+      `proposal_facts 不变性失败: 运行前后 proposal_facts 发生变化`,
+    );
   }
   return pass();
 }
@@ -963,6 +1222,8 @@ export function gradeHard(input: HardGraderInput): HardGrade {
   const privateConversationVisibility = gradePrivateConversationVisibility(oracle, primarySnapshot, adversarySnapshot);
   const teamHistoryVisibility = gradeTeamHistoryVisibility(oracle, primarySnapshot, adversarySnapshot);
   const projectMemoryVisibility = gradeProjectMemoryVisibility(oracle, primarySnapshot, adversarySnapshot);
+  const memoryTypeVisibility = gradeMemoryTypeVisibility(oracle, primarySnapshot, beforeSnapshot);
+  const proposalFactsUnchanged = gradeProposalFactsUnchanged(oracle, primarySnapshot, beforeSnapshot);
   const subjectAndOwnerPrivacy = gradeSubjectAndOwnerPrivacy(oracle, primarySnapshot, adversarySnapshot);
   const rawIdLeakage = gradeRawIdLeakage(oracle, observation, beforeSnapshot, primarySnapshot);
   const hiddenFieldLeakage = gradeHiddenFieldLeakage(oracle, observation, primarySnapshot, adversarySnapshot, beforeSnapshot, repeats);
@@ -980,6 +1241,8 @@ export function gradeHard(input: HardGraderInput): HardGrade {
     ["privateConversationVisibility", privateConversationVisibility],
     ["teamHistoryVisibility", teamHistoryVisibility],
     ["projectMemoryVisibility", projectMemoryVisibility],
+    ["memoryTypeVisibility", memoryTypeVisibility],
+    ["proposalFactsUnchanged", proposalFactsUnchanged],
     ["subjectAndOwnerPrivacy", subjectAndOwnerPrivacy],
     ["rawIdLeakage", rawIdLeakage],
     ["hiddenFieldLeakage", hiddenFieldLeakage],
@@ -1009,7 +1272,8 @@ export function gradeHard(input: HardGraderInput): HardGrade {
     && (prohibitedCommitEffects.skipped || prohibitedCommitEffects.passed)
     && (unknownSideEffects.skipped || unknownSideEffects.passed)
     && (idempotency.skipped || idempotency.passed)
-    && (readOnlyStatePurity.skipped || readOnlyStatePurity.passed);
+    && (readOnlyStatePurity.skipped || readOnlyStatePurity.passed)
+    && (proposalFactsUnchanged.skipped || proposalFactsUnchanged.passed);
 
   const trajectoryPassed =
     (terminalEventConsistency.skipped || terminalEventConsistency.passed)
@@ -1019,6 +1283,7 @@ export function gradeHard(input: HardGraderInput): HardGrade {
     (privateConversationVisibility.skipped || privateConversationVisibility.passed)
     && (teamHistoryVisibility.skipped || teamHistoryVisibility.passed)
     && (projectMemoryVisibility.skipped || projectMemoryVisibility.passed)
+    && (memoryTypeVisibility.skipped || memoryTypeVisibility.passed)
     && (subjectAndOwnerPrivacy.skipped || subjectAndOwnerPrivacy.passed)
     && (rawIdLeakage.skipped || rawIdLeakage.passed)
     && (hiddenFieldLeakage.skipped || hiddenFieldLeakage.passed);

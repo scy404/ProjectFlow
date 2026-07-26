@@ -208,6 +208,7 @@ export function createHttpPublicSeamRunner(options: HttpPublicSeamRunnerOptions)
           workspace_state: identity.workspaceState,
           runtime_config: {
             model: { provider, name: nameParts.join(":") },
+            ...(scenario.thinkingLevel ? { thinking_level: scenario.thinkingLevel } : {}),
             max_steps: scenario.maxRequestCount ?? 4,
             max_tool_calls: 20,
             timeout_ms: maxLatencyMs,

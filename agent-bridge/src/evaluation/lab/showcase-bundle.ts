@@ -32,7 +32,7 @@
  */
 
 import { createHash, randomBytes } from "node:crypto";
-import { link, mkdir, readFile, readdir, chmod, writeFile } from "node:fs/promises";
+import { link, mkdir, readFile, chmod, writeFile } from "node:fs/promises";
 import { lstatSync, realpathSync } from "node:fs";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import { EvaluationInfrastructureError, EvaluationValidationError } from "./errors.js";
@@ -53,6 +53,16 @@ import type {
 } from "./diagnosis-contract.js";
 import type { CalibrationArtifact } from "./calibration-contract.js";
 import { CAPABILITY_DOMAINS, SCENARIO_CLASSES, P0_MANDATORY_CATEGORIES, ROBUSTNESS_VARIANT_KINDS, type CapabilityDomain, type ScenarioClass } from "./golden-core-contract.js";
+import { GOLDEN_CORE_REGISTRY } from "./golden-core-registry.js";
+import type { GoldenCoreScenarioEntry } from "./golden-core-contract.js";
+import { getScenarioMetadata } from "./scenario-metadata.js";
+import {
+  type ExtensionIntegrityIndex,
+  readExtensionIntegrityIndex,
+  readVerifiedExtensionFile,
+  getExtensionEntriesByType,
+  type ExtensionFileType,
+} from "./extension-integrity.js";
 
 // ---------------------------------------------------------------------------
 // §1 Bundle schema
@@ -79,13 +89,30 @@ export interface BundleEvidenceRow {
   sourceIdPseudonym: string;
   /** SHA-256 of the source artifact's canonical content. NOT the file path. */
   sourceContentSha256: string;
-  /** Chinese summary, redacted. */
+  /** Chinese summary, redacted. NEVER includes free-text output — structured fields only. */
   summary: string;
+  /** Structured evidence fields. No free text, no raw IDs, no paths. */
+  structured?: {
+    /** For observation evidence: scenario status fields. */
+    scenarioStatus?: string;
+    passed?: boolean;
+    failureCount?: number;
+    hardGatePass?: number;
+    hardGateFail?: number;
+    latencyMs?: number;
+    /** For repair/diagnosis/cluster evidence. */
+    causalStatus?: string;
+    memberCount?: number;
+  };
   /** Always true for portable bundles. */
   redacted: true;
 }
 
-/** A redacted summary of a Repair Packet. */
+/** A redacted summary of a Repair Packet. Issue #100 batch D: portable
+ *  showcase MUST NOT include free-text fields (observedSymptom,
+ *  expectedContract, affectedComponents, acceptanceCriteria,
+ *  protectedBoundaries, nonGoals). Only pseudonym, enum, bool, count,
+ *  confidence, content SHA, and controlled template fields survive. */
 export interface BundleRepairPacketSummary {
   packetIdPseudonym: string;
   packetType: "fix" | "investigation";
@@ -93,32 +120,29 @@ export interface BundleRepairPacketSummary {
   causalStatus: string;
   confidence: string;
   staleState: "fresh" | "stale" | "unknown";
-  observedSymptom: string;
-  expectedContract: string;
-  affectedComponents: string[];
-  protectedBoundaries: string[];
-  nonGoals: string[];
-  acceptanceCriteria: string[];
+  /** Count of protected boundaries (the boundary text is NEVER in the bundle). */
+  protectedBoundaryCount: number;
+  /** Count of non-goals (the non-goal text is NEVER in the bundle). */
+  nonGoalCount: number;
   hasCandidateRegression: boolean;
   integritySha256: string;
 }
 
-/** A redacted summary of an Issue Cluster. */
+/** A redacted summary of an Issue Cluster. Issue #100 batch D: sharedCause
+ *  is free-text → removed. Only pseudonym, enum, count, confidence. */
 export interface BundleIssueClusterSummary {
   clusterIdPseudonym: string;
-  sharedCause: string;
   memberCount: number;
   causalStatus: string;
   confidence: string;
 }
 
-/** A redacted summary of a Diagnosis record. */
+/** A redacted summary of a Diagnosis record. Issue #100 batch D:
+ *  observedSymptom/expectedContract are free-text → removed. */
 export interface BundleDiagnosisSummary {
   diagnosisIdPseudonym: string;
   causalStatus: string;
   confidence: string;
-  observedSymptom: string;
-  expectedContract: string;
   integritySha256: string;
 }
 
@@ -332,13 +356,64 @@ export function pseudonymize(rawId: string, salt: Buffer, prefix: string): strin
 const RAW_USER_ID_PATTERN = /\buser_[a-zA-Z0-9_-]+\b/g;
 const RAW_TASK_ID_PATTERN = /\btask_[a-zA-Z0-9_-]+\b/g;
 const RAW_MEMBER_ID_PATTERN = /\bmember_[a-zA-Z0-9_-]+\b/g;
+const RAW_PROJECT_ID_PATTERN = /\bproject_[a-zA-Z0-9_-]+\b/g;
+const RAW_WORKSPACE_ID_PATTERN = /\bworkspace_[a-zA-Z0-9_-]+\b/g;
+const RAW_PROPOSAL_ID_PATTERN = /\bproposal_[a-zA-Z0-9_-]+\b/g;
+const RAW_CONVERSATION_ID_PATTERN = /\bconv(?:ersation)?_[a-zA-Z0-9_-]+\b/g;
+const STANDALONE_JWT_PATTERN = /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g;
 const ABSOLUTE_PATH_PATTERN = /(?:^|\s)(\/(?:[A-Za-z0-9._-]+\/)+[A-Za-z0-9._-]+)|(?:^|\s)([A-Z]:\\[^<*?"|>\r\n]+)/g;
 const SECRET_PATTERN = /\b(?:sk-[a-zA-Z0-9]{20,}|Bearer\s+[a-zA-Z0-9._-]{20,}|ghp_[a-zA-Z0-9]{30,}|-----BEGIN [A-Z ]+PRIVATE KEY-----)/g;
 
 /**
- * Redact a free-form text field. Replaces raw user/task/member IDs
- * with bundle-scoped pseudonyms, strips absolute paths and obvious
- * secret patterns.
+ * Issue #100 fix #2 + batch D: fail-closed privacy assertion.
+ *
+ * Scans the serialized bundle JSON for raw ID patterns, secrets, tokens,
+ * absolute paths and other privacy-sensitive content.
+ *
+ * Structured allowlist is the primary boundary — regex scanning is
+ * defense-in-depth only. Any detection causes the bundle to fail to build.
+ *
+ * THROWS on any detection → bundle is never published.
+ */
+export function assertBundlePrivacy(bundle: object): void {
+  const serialized = JSON.stringify(bundle);
+  const checks: Array<{ name: string; pattern: RegExp }> = [
+    // Raw ID patterns.
+    { name: "raw user_id", pattern: /\buser_[a-zA-Z0-9_-]{8,}\b/ },
+    { name: "raw task_id", pattern: /\btask_[a-zA-Z0-9_-]{8,}\b/ },
+    { name: "raw member_id", pattern: /\bmember_[a-zA-Z0-9_-]{8,}\b/ },
+    { name: "raw project_id", pattern: /\bproject_[a-zA-Z0-9_-]{8,}\b/ },
+    { name: "raw workspace_id", pattern: /\bworkspace_[a-zA-Z0-9_-]{8,}\b/ },
+    { name: "raw conversation_id", pattern: /\bconv(ersation)?_[a-zA-Z0-9_-]{8,}\b/ },
+    { name: "raw proposal_id", pattern: /\bproposal_[a-zA-Z0-9_-]{8,}\b/ },
+    { name: "raw run_id (non-prefixed)", pattern: /"runId":\s*"run_[a-zA-Z0-9_-]{8,}"/ },
+    // Secret/token patterns.
+    { name: "OpenAI API key", pattern: /sk-[a-zA-Z0-9]{20,}/ },
+    { name: "GitHub token", pattern: /ghp_[a-zA-Z0-9]{30,}/ },
+    { name: "bearer/JWT token", pattern: /Bearer\s+[a-zA-Z0-9._-]{20,}/ },
+    { name: "standalone JWT", pattern: /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/ },
+    { name: "private key block", pattern: /-----BEGIN [A-Z ]+PRIVATE KEY-----/ },
+    { name: "generic API token/key", pattern: /\b(api[_-]?key|api[_-]?token|access[_-]?token|auth[_-]?token|secret[_-]?key)\b.*:.*"[A-Za-z0-9._-]{16,}"/i },
+    // Cookie/password patterns.
+    { name: "session cookie", pattern: /\b(session|sid|token|auth|jwt)\s*=\s*[a-zA-Z0-9._-]{16,}/ },
+    { name: "password field", pattern: /\b(password|passwd|pwd)\b.*:\s*"[^"]+"/i },
+    // Path patterns.
+    { name: "absolute Unix path", pattern: /\/(Users|home|root|tmp|opt|etc|var)\// },
+    { name: "Windows drive letter path", pattern: /[A-Z]:\\/ },
+    { name: "agent-bridge artifacts path", pattern: /agent-bridge\/artifacts\/run_/ },
+    // Raw hidden prompt sentinel leakage.
+    { name: "hidden field token (sentinel)", pattern: /hiddenFieldTokens?|hidden_sentinel|hidden_field/i },
+  ];
+  for (const { name, pattern } of checks) {
+    if (pattern.test(serialized)) {
+      throw new EvaluationInfrastructureError(
+        `bundle 隐私断言失败: 检测到未脱敏的 ${name}`,
+      );
+    }
+  }
+}
+
+/**
  *
  * The `salt` and a per-text `idPrefix` ensure the same raw ID maps to
  * the same pseudonym within the bundle but different bundles cannot
@@ -350,8 +425,13 @@ export function redactText(text: string | undefined | null, salt: Buffer): strin
   redacted = redacted.replace(RAW_USER_ID_PATTERN, (match) => pseudonymize(match, salt, "user"));
   redacted = redacted.replace(RAW_TASK_ID_PATTERN, (match) => pseudonymize(match, salt, "task"));
   redacted = redacted.replace(RAW_MEMBER_ID_PATTERN, (match) => pseudonymize(match, salt, "member"));
+  redacted = redacted.replace(RAW_PROJECT_ID_PATTERN, (match) => pseudonymize(match, salt, "project"));
+  redacted = redacted.replace(RAW_WORKSPACE_ID_PATTERN, (match) => pseudonymize(match, salt, "workspace"));
+  redacted = redacted.replace(RAW_PROPOSAL_ID_PATTERN, (match) => pseudonymize(match, salt, "proposal"));
+  redacted = redacted.replace(RAW_CONVERSATION_ID_PATTERN, (match) => pseudonymize(match, salt, "conversation"));
   redacted = redacted.replace(ABSOLUTE_PATH_PATTERN, " <absolute_path_redacted> ");
   redacted = redacted.replace(SECRET_PATTERN, " <secret_redacted> ");
+  redacted = redacted.replace(STANDALONE_JWT_PATTERN, " <secret_redacted> ");
   return redacted;
 }
 
@@ -457,16 +537,24 @@ export async function buildShowcaseBundleInMemory(options: BuildShowcaseBundleOp
   const generatedAt = now();
   const bundleId = options.bundleId ?? `showcase_${pseudonymize(verified.runId, salt, "run")}_${generatedAt.replace(/[^0-9]/g, "").slice(0, 14)}`;
 
-  // §5.1 Read auxiliary artifacts (repair packets, clusters, diagnoses,
-  //      counterfactuals, calibration, golden-core). All reads happen
-  //      here so the bundle can inline summaries and never reference
-  //      local files again.
-  const repairPackets = await readRepairPackets(verified.runDir);
-  const issueClusters = await readIssueClusters(verified.runDir);
-  const diagnoses = await readDiagnoses(verified.runDir);
-  const counterfactuals = await readCounterfactuals(verified.runDir);
-  const calibrationArtifact = await readCalibrationArtifact(verified.runDir);
-  const candidateRegistry = await readCandidateRegistry(verified.runDir);
+  // §5.1 Read auxiliary artifacts through the verified extension
+  //      integrity index. Issue #100 fix #1: raw file reads of
+  //      un-signed side-channel files are FORBIDDEN. All auxiliary
+  //      artifacts (repair packets, clusters, diagnoses,
+  //      counterfactuals, calibration, candidates) MUST first pass
+  //      through a verified extension integrity index that anchors
+  //      to the source run's integrityRootSha256.
+  const extIndex = await readExtensionIntegrityIndex(
+    verified.runDir,
+    verified.integrity.integrityRootSha256,
+    verified.runId,
+  );
+  const repairPackets = await readIndexedRepairPackets(verified.runDir, extIndex);
+  const issueClusters = await readIndexedIssueClusters(verified.runDir, extIndex);
+  const diagnoses = await readIndexedDiagnoses(verified.runDir, extIndex);
+  const counterfactuals = await readIndexedCounterfactuals(verified.runDir, extIndex);
+  const calibrationArtifact = await readIndexedCalibrationArtifact(verified.runDir, extIndex);
+  const candidateRegistry = await readIndexedCandidateRegistry(verified.runDir, extIndex);
 
   // §5.2 Build the source artifact summary.
   const artifact = verified.artifact;
@@ -526,16 +614,19 @@ export async function buildShowcaseBundleInMemory(options: BuildShowcaseBundleOp
   // §5.8 Build evidence chains (representative summaries).
   const evidenceChains = buildEvidenceChains(artifact, repairPackets, issueClusters, diagnoses, counterfactuals, calibrationArtifact, salt);
 
-  // §5.9 Build issue cluster summaries.
+  // §5.9 Build issue cluster summaries. Issue #100 batch D: sharedCause
+  //      is free-text → removed.
   const issueClusterSummaries: BundleIssueClusterSummary[] = issueClusters.map((cluster) => ({
     clusterIdPseudonym: pseudonymize(cluster.clusterId, salt, "cluster"),
-    sharedCause: redactText(cluster.sharedCause, salt),
     memberCount: cluster.members.length,
     causalStatus: cluster.causalStatus,
     confidence: cluster.confidence,
   }));
 
-  // §5.10 Build repair packet summaries.
+  // §5.10 Build repair packet summaries. Issue #100 batch D: portable
+  //      showcase MUST NOT include free-text (observedSymptom,
+  //      expectedContract, affectedComponents, acceptanceCriteria,
+  //      protectedBoundaries, nonGoals). Counts only for boundaries/goals.
   const repairPacketSummaries: BundleRepairPacketSummary[] = repairPackets.map((packet) => ({
     packetIdPseudonym: pseudonymize(packet.packetId, salt, "packet"),
     packetType: packet.packetType,
@@ -543,23 +634,18 @@ export async function buildShowcaseBundleInMemory(options: BuildShowcaseBundleOp
     causalStatus: packet.causalStatus,
     confidence: packet.confidence,
     staleState: packet.staleState,
-    observedSymptom: redactText(packet.observedSymptom, salt),
-    expectedContract: redactText(packet.expectedContract, salt),
-    affectedComponents: packet.affectedComponents.map((c) => redactText(c, salt)),
-    protectedBoundaries: packet.protectedBoundaries.map((b) => redactText(b, salt)),
-    nonGoals: packet.nonGoals.map((g) => redactText(g, salt)),
-    acceptanceCriteria: packet.acceptanceCriteria.map((c) => redactText(c, salt)),
+    protectedBoundaryCount: packet.protectedBoundaries.length,
+    nonGoalCount: packet.nonGoals.length,
     hasCandidateRegression: !!packet.candidateRegression,
     integritySha256: packet.integritySha256,
   }));
 
-  // §5.11 Build diagnosis summaries.
+  // §5.11 Build diagnosis summaries. Issue #100 batch D:
+  //      observedSymptom/expectedContract are free-text → removed.
   const diagnosisSummaries: BundleDiagnosisSummary[] = diagnoses.map((diag) => ({
     diagnosisIdPseudonym: pseudonymize(diag.diagnosisId, salt, "diagnosis"),
     causalStatus: diag.causalStatus,
     confidence: diag.confidence,
-    observedSymptom: redactText(diag.observedSymptom, salt),
-    expectedContract: redactText(diag.expectedContract, salt),
     integritySha256: sha256(stableStringify(diag)),
   }));
 
@@ -648,7 +734,12 @@ export async function buildShowcaseBundleInMemory(options: BuildShowcaseBundleOp
     bundleProvenance,
   };
 
-  // §5.20 Compute the integrity hash.
+  // §5.20 Fail-closed privacy scan on the assembled bundle BEFORE computing
+  // the integrity hash. Any detected raw ID, secret, token, or path
+  // pattern causes the entire bundle to fail to build.
+  assertBundlePrivacy(bundleWithoutHash);
+
+  // §5.21 Compute the integrity hash.
   const integritySha256 = sha256(stableStringify(bundleWithoutHash));
   const bundle: ShowcaseBundle = { ...bundleWithoutHash, integritySha256 };
 
@@ -698,61 +789,53 @@ export async function buildShowcaseBundle(options: BuildShowcaseBundleOptions): 
 }
 
 // ---------------------------------------------------------------------------
-// §6 Helpers — auxiliary artifact readers
+// §6 Helpers — index-verified auxiliary artifact readers
 // ---------------------------------------------------------------------------
 
-async function readRepairPackets(runDir: string): Promise<RepairPacket[]> {
-  return readArtifactDir<RepairPacket>(runDir, "repair-packets");
+async function readIndexedRepairPackets(runDir: string, extIndex: ExtensionIntegrityIndex | null): Promise<RepairPacket[]> {
+  return readIndexedArtifactsByType<RepairPacket>(runDir, extIndex, "repair_packet");
 }
 
-async function readIssueClusters(runDir: string): Promise<IssueCluster[]> {
-  return readArtifactDir<IssueCluster>(runDir, "clusters");
+async function readIndexedIssueClusters(runDir: string, extIndex: ExtensionIntegrityIndex | null): Promise<IssueCluster[]> {
+  return readIndexedArtifactsByType<IssueCluster>(runDir, extIndex, "issue_cluster");
 }
 
-async function readDiagnoses(runDir: string): Promise<DiagnosisRecord[]> {
-  return readArtifactDir<DiagnosisRecord>(runDir, "diagnoses");
+async function readIndexedDiagnoses(runDir: string, extIndex: ExtensionIntegrityIndex | null): Promise<DiagnosisRecord[]> {
+  return readIndexedArtifactsByType<DiagnosisRecord>(runDir, extIndex, "diagnosis");
 }
 
-async function readCounterfactuals(runDir: string): Promise<CounterfactualRecord[]> {
-  return readArtifactDir<CounterfactualRecord>(runDir, "counterfactuals");
+async function readIndexedCounterfactuals(runDir: string, extIndex: ExtensionIntegrityIndex | null): Promise<CounterfactualRecord[]> {
+  return readIndexedArtifactsByType<CounterfactualRecord>(runDir, extIndex, "counterfactual");
 }
 
-async function readArtifactDir<T>(runDir: string, subdir: string): Promise<T[]> {
-  const dir = join(runDir, subdir);
-  let files: string[];
-  try {
-    files = await readdir(dir);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
-    throw error;
-  }
-  const jsonFiles = files.filter((f) => f.endsWith(".json")).sort();
+async function readIndexedArtifactsByType<T>(
+  runDir: string,
+  extIndex: ExtensionIntegrityIndex | null,
+  type: ExtensionFileType,
+): Promise<T[]> {
+  const entries = extIndex ? getExtensionEntriesByType(extIndex, type) : [];
   const results: T[] = [];
-  for (const file of jsonFiles) {
-    const content = await readFile(join(dir, file), "utf-8");
+  for (const entry of entries) {
+    const { content } = await readVerifiedExtensionFile(extIndex!, runDir, entry.relativePath);
     results.push(JSON.parse(content) as T);
   }
   return results;
 }
 
-async function readCalibrationArtifact(runDir: string): Promise<CalibrationArtifact | null> {
-  try {
-    const content = await readFile(join(runDir, "calibration-artifact.json"), "utf-8");
-    return JSON.parse(content) as CalibrationArtifact;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
-    throw error;
-  }
+async function readIndexedCalibrationArtifact(runDir: string, extIndex: ExtensionIntegrityIndex | null): Promise<CalibrationArtifact | null> {
+  if (!extIndex) return null;
+  const calEntries = getExtensionEntriesByType(extIndex, "calibration_artifact");
+  if (calEntries.length === 0) return null;
+  const { content } = await readVerifiedExtensionFile(extIndex, runDir, calEntries[0]!.relativePath);
+  return JSON.parse(content) as CalibrationArtifact;
 }
 
-async function readCandidateRegistry(runDir: string): Promise<{ candidates?: unknown[] } | null> {
-  try {
-    const content = await readFile(join(runDir, "candidate-registry.json"), "utf-8");
-    return JSON.parse(content) as { candidates?: unknown[] };
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
-    throw error;
-  }
+async function readIndexedCandidateRegistry(runDir: string, extIndex: ExtensionIntegrityIndex | null): Promise<{ candidates?: unknown[] } | null> {
+  if (!extIndex) return null;
+  const candEntries = getExtensionEntriesByType(extIndex, "candidate_registry");
+  if (candEntries.length === 0) return null;
+  const { content } = await readVerifiedExtensionFile(extIndex, runDir, candEntries[0]!.relativePath);
+  return JSON.parse(content) as { candidates?: unknown[] };
 }
 
 // ---------------------------------------------------------------------------
@@ -821,11 +904,10 @@ function buildHardGatesSummary(artifact: EvaluationArtifact): BundleHardGates {
 }
 
 function buildCapabilityMatrix(artifact: EvaluationArtifact, _salt: Buffer): CapabilityMatrixRow[] {
-  // Group observations by capability domain and scenario class.
-  // The scenarioId encodes the domain (e.g., "clarify-normal-001"
-  // → domain=clarification-direction, class=normal). We use a
-  // heuristic mapping because the scenario contracts are not in the
-  // artifact itself.
+  // For golden-core preset, join the frozen Golden Core registry's
+  // capability/scenarioClass/priority/P0 metadata. Heuristic inference
+  // from scenarioId is FORBIDDEN — missing/duplicate/unknown MUST
+  // fail-closed. Issue #100 fix #3.
   const byDomain = new Map<CapabilityDomain, { passed: number; failed: number; skipped: number; excluded: number; infraErrors: number; total: number }>();
   const byClass = new Map<ScenarioClass, { passed: number; failed: number; skipped: number; excluded: number; infraErrors: number; total: number }>();
   for (const domain of CAPABILITY_DOMAINS) byDomain.set(domain, { passed: 0, failed: 0, skipped: 0, excluded: 0, infraErrors: 0, total: 0 });
@@ -834,9 +916,32 @@ function buildCapabilityMatrix(artifact: EvaluationArtifact, _salt: Buffer): Cap
   const grades = new Map<string, Grade>();
   for (const grade of artifact.grades) grades.set(grade.scenarioId, grade);
 
+  // Build Golden Core metadata map for registry-verified runs.
+  const gcMeta = buildGoldenCoreMetadataMap(artifact);
+
   for (const obs of artifact.observations) {
-    const domain = inferCapabilityDomain(obs.scenarioId);
-    const cls = inferScenarioClass(obs.scenarioId);
+    let domain: CapabilityDomain;
+    let cls: ScenarioClass;
+
+    if (gcMeta) {
+      // Golden Core preset: use registry metadata ONLY. Missing/unknown
+      // scenarioId fails-closed at buildGoldenCoreMetadataMap.
+      const meta = gcMeta.get(obs.scenarioId);
+      if (!meta) {
+        throw new EvaluationValidationError(
+          `Golden Core observation ${obs.scenarioId} 未在 Golden Core registry 中找到 metadata; 禁止 heuristic 猜测`,
+        );
+      }
+      domain = meta.capability;
+      cls = meta.scenarioClass;
+    } else {
+      // Non-Golden-Core preset: scenario contracts MUST carry explicit
+      // capability/scenarioClass metadata. Heuristic fallback is ONLY
+      // for legacy scenarios that predate this contract.
+      domain = getExplicitCapabilityDomain(obs.scenarioId);
+      cls = getExplicitScenarioClass(obs.scenarioId);
+    }
+
     const grade = grades.get(obs.scenarioId);
     const applyBucket = (entry: { passed: number; failed: number; skipped: number; excluded: number; infraErrors: number; total: number } | undefined) => {
       if (!entry) return;
@@ -854,6 +959,27 @@ function buildCapabilityMatrix(artifact: EvaluationArtifact, _salt: Buffer): Cap
     applyBucket(byClass.get(cls));
   }
 
+  // Issue #100 batch 3: for golden-core partial_budget, missing canonical
+  // observations are explicitly skipped. Add them to domain/class totals
+  // so the matrix reflects all 52 canonicals, not just observed count.
+  if (gcMeta && artifact.status === "partial_budget") {
+    const observedIds = new Set(artifact.observations.map((o) => o.scenarioId));
+    for (const entry of GOLDEN_CORE_REGISTRY.canonical) {
+      if (!observedIds.has(entry.scenarioId)) {
+        const domainEntry = byDomain.get(entry.capability);
+        if (domainEntry) {
+          domainEntry.total += 1;
+          domainEntry.skipped += 1;
+        }
+        const classEntry = byClass.get(entry.scenarioClass);
+        if (classEntry) {
+          classEntry.total += 1;
+          classEntry.skipped += 1;
+        }
+      }
+    }
+  }
+
   const rows: CapabilityMatrixRow[] = [];
   for (const [domain, entry] of byDomain) {
     rows.push({ dimension: "domain", key: domain, ...entry });
@@ -861,33 +987,274 @@ function buildCapabilityMatrix(artifact: EvaluationArtifact, _salt: Buffer): Cap
   for (const [cls, entry] of byClass) {
     rows.push({ dimension: "class", key: cls, ...entry });
   }
+
+  // Post-build verification: every domain and class must have a row.
+  // A missing row means the metadata map is incomplete.
+  const domainKeys = new Set(rows.filter((r) => r.dimension === "domain").map((r) => r.key));
+  const classKeys = new Set(rows.filter((r) => r.dimension === "class").map((r) => r.key));
+  for (const domain of CAPABILITY_DOMAINS) {
+    if (!domainKeys.has(domain)) {
+      throw new EvaluationValidationError(
+        `capability matrix 缺少 domain: ${domain}; metadata map 不完整`,
+      );
+    }
+  }
+  for (const cls of SCENARIO_CLASSES) {
+    if (!classKeys.has(cls)) {
+      throw new EvaluationValidationError(
+        `capability matrix 缺少 scenarioClass: ${cls}; metadata map 不完整`,
+      );
+    }
+  }
+
+  // Issue #100 batch 3: for golden-core runs, domain and class totals
+  // must each sum to the canonical count (52). Non-Golden-Core presets
+  // are exempt — their scenario sets are not bounded by the registry.
+  if (gcMeta) {
+    const domainTotal = rows.filter((r) => r.dimension === "domain").reduce((s, r) => s + r.total, 0);
+    const classTotal = rows.filter((r) => r.dimension === "class").reduce((s, r) => s + r.total, 0);
+    const canonicalCount = GOLDEN_CORE_REGISTRY.canonical.length;
+    if (domainTotal !== canonicalCount) {
+      throw new EvaluationValidationError(
+        `Golden Core capability matrix domain total ${domainTotal} !== canonical ${canonicalCount}; 缺失 canonical 场景未被计入 domain`,
+      );
+    }
+    if (classTotal !== canonicalCount) {
+      throw new EvaluationValidationError(
+        `Golden Core capability matrix class total ${classTotal} !== canonical ${canonicalCount}; 缺失 canonical 场景未被计入 class`,
+      );
+    }
+  }
+
   return rows;
 }
 
-function inferCapabilityDomain(scenarioId: string): CapabilityDomain {
-  const id = scenarioId.toLowerCase();
-  if (id.includes("clarify") || id.includes("direction")) return "clarification-direction";
-  if (id.includes("plan") || id.includes("stage")) return "stage-planning";
-  if (id.includes("breakdown") || id.includes("task")) return "task-breakdown";
-  if (id.includes("assign")) return "assignment";
-  if (id.includes("status") || id.includes("read")) return "status-read";
-  if (id.includes("checkin") || id.includes("risk") || id.includes("replan")) return "checkin-risk-replan";
-  if (id.includes("memory") || id.includes("conversation") || id.includes("chat")) return "conversations-project-memory";
-  if (id.includes("runtime") || id.includes("security") || id.includes("recovery")) return "runtime-recovery-security";
-  return "status-read";
+/**
+ * Build a scenarioId → GoldenCoreScenarioEntry map from the frozen
+ * Golden Core registry. Returns `null` when the artifact is NOT a
+ * golden-core run — non-Golden-Core presets use explicit contract
+ * metadata instead.
+ *
+ * Issue #100 fix #3: missing/duplicate/unknown scenarioIds fail-closed.
+ *
+ * Issue #100 batch 2: enhanced with alignment validation.
+ * - For completed/regression: observation set MUST equal canonical set.
+ * - For partial_budget: explicitly count skipped scenarios.
+ * - Verifies every registry canonical scenarioId has exactly one
+ *   observation and one grade.
+ * - Verifies no duplicate observations or grades.
+ * - Verifies grade.scenarioId matches observation.scenarioId.
+ */
+function buildGoldenCoreMetadataMap(
+  artifact: EvaluationArtifact,
+): Map<string, GoldenCoreScenarioEntry> | null {
+  if (artifact.preset !== "golden-core") return null;
+
+  const registry = GOLDEN_CORE_REGISTRY;
+  const byId = new Map<string, GoldenCoreScenarioEntry>();
+  for (const entry of registry.canonical) {
+    if (byId.has(entry.scenarioId)) {
+      throw new EvaluationValidationError(
+        `Golden Core registry 包含重复 scenarioId: ${entry.scenarioId}`,
+      );
+    }
+    byId.set(entry.scenarioId, entry);
+  }
+
+  // Verify every observation scenarioId exists in the registry.
+  const observedIds = new Set(artifact.observations.map((o) => o.scenarioId));
+  for (const id of observedIds) {
+    if (!byId.has(id)) {
+      throw new EvaluationValidationError(
+        `Golden Core observation ${id} 不在 Golden Core registry canonical 集合中; 禁止 heuristic`,
+      );
+    }
+  }
+
+  // Alignment validation.
+  validateGoldenCoreAlignment(artifact, registry.canonical, byId);
+
+  return byId;
 }
 
-function inferScenarioClass(scenarioId: string): ScenarioClass {
-  const id = scenarioId.toLowerCase();
-  if (id.includes("normal")) return "normal";
-  if (id.includes("negative") || id.includes("forbidden") || id.includes("prohibit")) return "negative";
-  if (id.includes("boundary") || id.includes("edge")) return "boundary";
-  if (id.includes("insufficient") || id.includes("missing")) return "insufficient-information";
-  if (id.includes("conflict")) return "conflict";
-  if (id.includes("switch") || id.includes("goal-change")) return "goal-switching";
-  if (id.includes("adversarial") || id.includes("attack") || id.includes("inject")) return "adversarial";
-  if (id.includes("multi-turn") || id.includes("multiturn") || id.includes("conversation")) return "multi-turn";
-  return "normal";
+/**
+ * Validate Golden Core alignment between the frozen registry and the
+ * evaluation artifact.
+ *
+ * Issue #100 batch 2:
+ *  - Verifies every registry canonical scenarioId has EXACTLY one
+ *    observation and one grade.
+ *  - Verifies no duplicate observations or grades.
+ *  - Verifies grade.scenarioId matches observation.scenarioId.
+ *  - For completed/regression: observation count == registry canonical count.
+ *  - For partial_budget: if observations < canonical count, the
+ *    remainder are explicitly skipped (not silently omitted).
+ */
+export function validateGoldenCoreAlignment(
+  artifact: EvaluationArtifact,
+  canonical: ReadonlyArray<GoldenCoreScenarioEntry>,
+  _canonicalById: Map<string, GoldenCoreScenarioEntry>,
+  options?: { throwOnMisalignment?: boolean },
+): {
+  aligned: boolean;
+  missingObservations: string[];
+  missingGrades: string[];
+  mismatchedGradeScenarioIds: string[];
+  duplicateObservations: string[];
+  duplicateGrades: string[];
+} {
+  const shouldThrow = options?.throwOnMisalignment ?? true;
+  const canonicalIds = new Set(canonical.map((e) => e.scenarioId));
+
+  // Detect duplicate observations by scenarioId.
+  const obsCounts = new Map<string, number>();
+  for (const obs of artifact.observations) {
+    obsCounts.set(obs.scenarioId, (obsCounts.get(obs.scenarioId) ?? 0) + 1);
+  }
+  const duplicateObservations: string[] = [];
+  for (const [id, count] of obsCounts) {
+    if (count > 1) duplicateObservations.push(id);
+  }
+
+  // Detect duplicate grades by scenarioId.
+  const gradeCounts = new Map<string, number>();
+  for (const grade of artifact.grades) {
+    gradeCounts.set(grade.scenarioId, (gradeCounts.get(grade.scenarioId) ?? 0) + 1);
+  }
+  const duplicateGrades: string[] = [];
+  for (const [id, count] of gradeCounts) {
+    if (count > 1) duplicateGrades.push(id);
+  }
+
+  // Build grade lookup by scenarioId.
+  const gradeById = new Map<string, Grade>();
+  for (const grade of artifact.grades) {
+    gradeById.set(grade.scenarioId, grade);
+  }
+
+  // Detect mismatched grade.scenarioId vs observation.scenarioId.
+  const observedIds = new Set(artifact.observations.map((o) => o.scenarioId));
+  const gradedIds = new Set(artifact.grades.map((g) => g.scenarioId));
+  const mismatchedGradeScenarioIds: string[] = [];
+  for (const gId of gradedIds) {
+    if (!observedIds.has(gId)) {
+      mismatchedGradeScenarioIds.push(gId);
+    }
+  }
+
+  // Detect missing observations (in canonical but not observed).
+  const missingObservations: string[] = [];
+  for (const cId of canonicalIds) {
+    if (!observedIds.has(cId)) {
+      missingObservations.push(cId);
+    }
+  }
+
+  // Detect missing grades (observed but not graded).
+  const missingGrades: string[] = [];
+  for (const oId of observedIds) {
+    if (!gradedIds.has(oId)) {
+      missingGrades.push(oId);
+    }
+  }
+
+  // ── Phase 1: structural integrity checks (duplicates, grade mismatches,
+  //            missing grades). These MUST fire BEFORE count checks so the
+  //            most specific error is reported.
+
+  const issues: string[] = [];
+  if (duplicateObservations.length > 0) {
+    issues.push(`重复 observation: ${duplicateObservations.join(", ")}`);
+  }
+  if (duplicateGrades.length > 0) {
+    issues.push(`重复 grade: ${duplicateGrades.join(", ")}`);
+  }
+  if (mismatchedGradeScenarioIds.length > 0) {
+    issues.push(`grade 有 observation 中不存在的 scenarioId: ${mismatchedGradeScenarioIds.join(", ")}`);
+  }
+  // Issue #100 batch 3: any observed scenario without a grade is fail-closed.
+  // Grades are the ONLY source of ground truth — an observation without a
+  // grade is an incomplete evidence chain and cannot be summarized.
+  if (missingGrades.length > 0) {
+    issues.push(`observed 场景缺少 grade: ${missingGrades.join(", ")}`);
+  }
+
+  if (issues.length > 0 && shouldThrow) {
+    throw new EvaluationValidationError(`Golden Core alignment 失败: ${issues.join("; ")}`);
+  }
+
+  // ── Phase 2: count checks (only when structural integrity passes).
+
+  // For completed/regression: observation count must equal canonical count.
+  const status = artifact.status;
+  if (status === "completed" || status === "regression") {
+    if (artifact.observations.length !== canonical.length) {
+      const msg = `Golden Core alignment 失败 (${status}): observation 数量 ${artifact.observations.length} !== canonical ${canonical.length}; 缺失 ${missingObservations.length} 场景`;
+      if (shouldThrow) {
+        throw new EvaluationValidationError(msg);
+      }
+      return {
+        aligned: false,
+        missingObservations,
+        missingGrades,
+        mismatchedGradeScenarioIds,
+        duplicateObservations,
+        duplicateGrades,
+      };
+    }
+  }
+
+  // For partial_budget: if observations < canonical count, remaining
+  // are explicitly skipped (not silently omitted).
+  if (status === "partial_budget" && artifact.observations.length < canonical.length) {
+    // This is expected — the rest are skipped. We record them but
+    // do NOT throw (partial_budget is a valid exit reason).
+    return {
+      aligned: true,
+      missingObservations,
+      missingGrades,
+      mismatchedGradeScenarioIds,
+      duplicateObservations,
+      duplicateGrades,
+    };
+  }
+
+  return {
+    aligned: issues.length === 0,
+    missingObservations,
+    missingGrades,
+    mismatchedGradeScenarioIds,
+    duplicateObservations,
+    duplicateGrades,
+  };
+}
+
+/**
+ * Get capability domain from explicit contract metadata. The scenario
+ * metadata map (`scenario-metadata.ts`) is the SINGLE source of truth.
+ * Unknown scenario IDs fail-closed — heuristic guessing is forbidden.
+ *
+ * Issue #100 batch 2: non-Golden-Core presets MUST use explicit
+ * metadata, not heuristic substring matching on scenarioId.
+ */
+function getExplicitCapabilityDomain(scenarioId: string): CapabilityDomain {
+  const meta = getScenarioMetadata(scenarioId);
+  if (!meta) {
+    throw new EvaluationValidationError(
+      `场景 ${scenarioId} 未在 scenario metadata 中找到 capabilityDomain; 禁止 heuristic 猜测`,
+    );
+  }
+  return meta.capabilityDomain;
+}
+
+function getExplicitScenarioClass(scenarioId: string): ScenarioClass {
+  const meta = getScenarioMetadata(scenarioId);
+  if (!meta) {
+    throw new EvaluationValidationError(
+      `场景 ${scenarioId} 未在 scenario metadata 中找到 scenarioClass; 禁止 heuristic 猜测`,
+    );
+  }
+  return meta.scenarioClass;
 }
 
 function buildReliabilitySummary(artifact: EvaluationArtifact): BundleReliability {
@@ -953,70 +1320,96 @@ function buildEvidenceChains(
   for (const grade of artifact.grades) grades.set(grade.scenarioId, grade);
 
   // §1 Representative observations (up to 10 to keep the bundle compact).
-  // Issue #100 §3.1: "evidenceChains 必须包含足够信息让审查者判断场景
-  // 行为, 但所有 raw user/task/member ID 必须经过 pseudonymize". We
-  // include a SHORT redacted snippet of the observation output (up to
-  // 200 chars) so reviewers can see what the scenario actually did
-  // without leaking raw private text. The snippet is run through
-  // `redactText` which replaces raw IDs with bundle-scoped pseudonyms.
+  // Issue #100 fix #2: structured allowlist ONLY — NO free-text observation
+  // output, even redacted. Regex-based redaction cannot guarantee full
+  // coverage of all possible ID/path/secret formats. Instead, include
+  // only deterministic structured fields (scenario status, grade counts,
+  // hard gate results, latency).
   const observations = artifact.observations.slice(0, 10);
   for (const obs of observations) {
     const grade = grades.get(obs.scenarioId);
-    const outputSnippet = redactText(obs.output?.slice(0, 200) ?? "", salt);
+    const failureCount = grade?.failures.length ?? 0;
+    const hardGraders = grade?.hardGrade?.graders ?? {};
+    const hardGraderEntries = Object.entries(hardGraders);
+    const hardGatePass = hardGraderEntries.filter(([, v]) => v).length;
+    const hardGateFail = hardGraderEntries.filter(([, v]) => !v).length;
     const summary = grade
       ? grade.passed
-        ? `场景 ${redactText(obs.scenarioId, salt)} 通过: ${grade.failures.length === 0 ? "无失败" : redactText(grade.failures.join("; "), salt)}; 输出摘要: ${outputSnippet}`
-        : `场景 ${redactText(obs.scenarioId, salt)} 失败: ${redactText(grade.failures.join("; "), salt)}; 输出摘要: ${outputSnippet}`
-      : `场景 ${redactText(obs.scenarioId, salt)} 未见 grade; 输出摘要: ${outputSnippet}`;
+        ? `场景 ${pseudonymize(obs.scenarioId, salt, "scenario")} 通过 (${failureCount} 失败, 硬门禁 ${hardGatePass}/${hardGatePass + hardGateFail})`
+        : `场景 ${pseudonymize(obs.scenarioId, salt, "scenario")} 失败 (${failureCount} 失败, 硬门禁 ${hardGatePass}/${hardGatePass + hardGateFail})`
+      : `场景 ${pseudonymize(obs.scenarioId, salt, "scenario")} 未见 grade`;
     rows.push({
       evidenceKind: "observation",
       sourceIdPseudonym: pseudonymize(obs.scenarioId, salt, "scenario"),
       sourceContentSha256: sha256(stableStringify(obs)),
       summary,
+      structured: {
+        scenarioStatus: obs.terminalStatus,
+        passed: grade?.passed,
+        failureCount,
+        hardGatePass,
+        hardGateFail,
+        latencyMs: obs.latencyMs,
+      },
       redacted: true,
     });
   }
 
-  // §2 Repair packets (up to 5).
+  // §2 Repair packets (up to 5). Issue #100 batch D: summary must not
+  //    include free-text observedSymptom.
   for (const packet of repairPackets.slice(0, 5)) {
     rows.push({
       evidenceKind: "repair_packet",
       sourceIdPseudonym: pseudonymize(packet.packetId, salt, "packet"),
       sourceContentSha256: packet.integritySha256,
-      summary: `Repair Packet (${packet.packetType}, ${packet.causalStatus}): ${redactText(packet.observedSymptom, salt)}`,
+      summary: `Repair Packet (${packet.packetType}, ${packet.causalStatus}, severity=${packet.severity})`,
+      structured: {
+        causalStatus: packet.causalStatus,
+        memberCount: 1,
+      },
       redacted: true,
     });
   }
 
-  // §3 Issue clusters (up to 5).
+  // §3 Issue clusters (up to 5). Issue #100 batch D: summary must not
+  //    include free-text sharedCause.
   for (const cluster of issueClusters.slice(0, 5)) {
     rows.push({
       evidenceKind: "cluster",
       sourceIdPseudonym: pseudonymize(cluster.clusterId, salt, "cluster"),
       sourceContentSha256: sha256(stableStringify(cluster)),
-      summary: `Issue Cluster (${cluster.causalStatus}, ${cluster.members.length} members): ${redactText(cluster.sharedCause, salt)}`,
+      summary: `Issue Cluster (${cluster.causalStatus}, ${cluster.members.length} members)`,
+      structured: {
+        causalStatus: cluster.causalStatus,
+        memberCount: cluster.members.length,
+      },
       redacted: true,
     });
   }
 
-  // §4 Diagnoses (up to 5).
+  // §4 Diagnoses (up to 5). Issue #100 batch D: summary must not
+  //    include free-text observedSymptom.
   for (const diag of diagnoses.slice(0, 5)) {
     rows.push({
       evidenceKind: "diagnosis",
       sourceIdPseudonym: pseudonymize(diag.diagnosisId, salt, "diagnosis"),
       sourceContentSha256: sha256(stableStringify(diag)),
-      summary: `Diagnosis (${diag.causalStatus}): ${redactText(diag.observedSymptom, salt)}`,
+      summary: `Diagnosis (${diag.causalStatus}, confidence=${diag.confidence})`,
+      structured: {
+        causalStatus: diag.causalStatus,
+      },
       redacted: true,
     });
   }
 
-  // §5 Counterfactuals (up to 3).
+  // §5 Counterfactuals (up to 3). Issue #100 batch D: changedFactor
+  //    is free-text → removed. Only pseudonym, bool, content SHA.
   for (const cf of counterfactuals.slice(0, 3)) {
     rows.push({
       evidenceKind: "counterfactual",
       sourceIdPseudonym: pseudonymize(cf.counterfactualId, salt, "cf"),
       sourceContentSha256: sha256(stableStringify(cf)),
-      summary: `Counterfactual: 单变量 changedFactor=${redactText(JSON.stringify(cf.changedFactor), salt)} outcomeChanged=${cf.outcomeChanged ? "true" : "false"}`,
+      summary: `Counterfactual: outcomeChanged=${cf.outcomeChanged ? "true" : "false"}`,
       redacted: true,
     });
   }
@@ -1230,22 +1623,7 @@ export async function verifyShowcaseBundle(bundlePath: string): Promise<Showcase
   if (!bundle.releaseVerdict.forbiddenClaims || bundle.releaseVerdict.forbiddenClaims.length === 0) {
     throw new EvaluationValidationError("bundle releaseVerdict.forbiddenClaims 不能为空");
   }
-  // Verify no raw IDs leak in the bundle (heuristic scan).
-  const serialized = JSON.stringify(bundle);
-  if (/\buser_[a-zA-Z0-9_-]{8,}\b/.test(serialized)) {
-    throw new EvaluationValidationError("bundle 检测到未脱敏的 raw user_id");
-  }
-  if (/\btask_[a-zA-Z0-9_-]{8,}\b/.test(serialized)) {
-    throw new EvaluationValidationError("bundle 检测到未脱敏的 raw task_id");
-  }
-  if (/\bmember_[a-zA-Z0-9_-]{8,}\b/.test(serialized)) {
-    throw new EvaluationValidationError("bundle 检测到未脱敏的 raw member_id");
-  }
-  if (/sk-[a-zA-Z0-9]{20,}/.test(serialized)) {
-    throw new EvaluationValidationError("bundle 检测到疑似 OpenAI API key");
-  }
-  if (/ghp_[a-zA-Z0-9]{30,}/.test(serialized)) {
-    throw new EvaluationValidationError("bundle 检测到疑似 GitHub token");
-  }
+  // Fail-closed privacy scan (shared with build path — Issue #100 fix #2).
+  assertBundlePrivacy(bundle);
   return bundle;
 }

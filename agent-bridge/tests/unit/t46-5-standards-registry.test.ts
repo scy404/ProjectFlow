@@ -89,6 +89,26 @@ function buildSampleEntry(id: string, version: number, registry: "active" | "can
   };
 }
 
+function buildPromotionReadyEntry(id: string, version: number): StandardEntry {
+  const entry = buildSampleEntry(id, version, "candidate");
+  return {
+    ...entry,
+    payload: {
+      ...entry.payload,
+      evidenceReferences: [
+        {
+          reference: `calibrations/run-1/${id}-evidence.json`,
+          referenceSha256: "a".repeat(64),
+        },
+      ],
+      verdict: "pass",
+      score: "excellent",
+      reason: "冻结校准证据通过。",
+      confidence: 0.95,
+    },
+  } as StandardEntry;
+}
+
 describe("T46-5 standards registry — fixed paths", () => {
   it("exposes the fixed active registry path", () => {
     expect(ACTIVE_REGISTRY_DIR).toBe("agent-bridge/standards/active");
@@ -333,7 +353,7 @@ describe("T46-5 standards registry — applyPromotionApproval (ONLY active mutat
 
   it("rejects when beforeActiveFingerprint does not match the current active", () => {
     const active = buildEmptyActiveRegistry();
-    const candidate = buildApprovedCandidate("c-1", buildSampleEntry("p0-rubric", 1, "candidate"));
+    const candidate = buildApprovedCandidate("c-1", buildPromotionReadyEntry("p0-rubric", 1));
     const approval = buildApproval(candidate, active, active);
     approval.beforeActiveFingerprint = "wrong-fp";
     expect(() => applyPromotionApproval(active, candidate, approval, [])).toThrow(
@@ -343,7 +363,7 @@ describe("T46-5 standards registry — applyPromotionApproval (ONLY active mutat
 
   it("computes the new active registry with the candidate entry added", () => {
     const active = buildEmptyActiveRegistry();
-    const entry = buildSampleEntry("p0-rubric", 1, "candidate");
+    const entry = buildPromotionReadyEntry("p0-rubric", 1);
     const candidate = buildApprovedCandidate("c-1", entry);
     // Use a FIXED timestamp to avoid flakiness from `new Date().toISOString()`
     // being called at different milliseconds in the test and the function.
@@ -366,7 +386,7 @@ describe("T46-5 standards registry — applyPromotionApproval (ONLY active mutat
 
   it("rejects when afterActiveFingerprint does not match the computed result (tampered approval)", () => {
     const active = buildEmptyActiveRegistry();
-    const candidate = buildApprovedCandidate("c-1", buildSampleEntry("p0-rubric", 1, "candidate"));
+    const candidate = buildApprovedCandidate("c-1", buildPromotionReadyEntry("p0-rubric", 1));
     const approval = buildApproval(candidate, active, active);
     approval.afterActiveFingerprint = "wrong-fp";
     expect(() => applyPromotionApproval(active, candidate, approval, [])).toThrow(
@@ -384,7 +404,7 @@ describe("T46-5 standards registry — applyPromotionApproval (ONLY active mutat
       updatedAt: "2026-07-20T00:00:00.000Z",
     };
     const active: StandardsRegistry = { ...activeBase, fingerprint: computeRegistryFingerprint(activeBase) };
-    const newEntry = buildSampleEntry("p0-rubric", 2, "candidate");
+    const newEntry = buildPromotionReadyEntry("p0-rubric", 2);
     const candidate = buildApprovedCandidate("c-1", newEntry);
     // Use a FIXED timestamp to avoid flakiness.
     const fixedNow = "2026-07-20T00:00:00.000Z";
@@ -401,6 +421,19 @@ describe("T46-5 standards registry — applyPromotionApproval (ONLY active mutat
     expect(result.diffSummary.modifications).toBe(1);
     expect(result.diffSummary.additions).toBe(0);
     expect(result.newActive.entries[0]!.version).toBe(2);
+  });
+
+  it("rejects an approved semantic candidate whose evidence is still needs_review", () => {
+    const active = buildEmptyActiveRegistry();
+    const candidate = buildApprovedCandidate(
+      "c-needs-review",
+      buildSampleEntry("p0-rubric", 1, "candidate"),
+    );
+    const approval = buildApproval(candidate, active, active);
+
+    expect(() => applyPromotionApproval(active, candidate, approval, [])).toThrow(
+      /promotion evidence readiness/,
+    );
   });
 });
 

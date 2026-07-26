@@ -171,6 +171,7 @@ describe("T46-6 Golden Core registry — invariants", () => {
       "risk-analysis",
       "risk-replan",
       "project-status",
+      "project-read",
     ]);
     for (const entry of GOLDEN_CORE_REGISTRY.canonical) {
       const expectedSkill = entry.scenario.hidden.expectedSkill;
