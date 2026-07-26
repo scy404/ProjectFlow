@@ -2,7 +2,7 @@
 
 > Issue：[#100](https://github.com/wubq511/ProjectFlow/issues/100)
 >
-> 状态：2026-07-27 跨 Slice 审查与 C1/C2 证据归一化已完成。Post-review Golden Core mock evidence 52/52（`run_1785085331148`，integrity `91737377d5de9b5c6725fe3505c26c66743519350b2d199fc9dd0255e46863b2`）；C1 paid Flash preview 与 C2 三个 real acceptance slots 均通过；第二批 capability metadata、independent shell adapters、known-fault chain、preview/extension/promotion/privacy hardening 已验证。#100/#93 技术关闭门禁已满足，当前仅剩 push、merge 与关闭 Issue。
+> 状态：2026-07-27 跨 Slice 审查与 C1/C2 证据归一化已完成。Post-review Golden Core mock evidence 52/52（`run_1785085331148`，integrity `91737377d5de9b5c6725fe3505c26c66743519350b2d199fc9dd0255e46863b2`）；C1 paid Flash preview 与 C2 三个 real acceptance slots 均通过；第二批 capability metadata、independent shell adapters、known-fault chain、preview/extension/promotion/privacy hardening 已验证。已合并到 `main`（`4728cf2`），Issue #100 与父 Issue #93 已关闭。
 >
 > 边界：#100 在 #99 的 Golden Core 之上补齐两个只读展示面（portable committed redacted showcase bundle + loopback-only local read viewer）、live preview、schema/provenance 校验、retention planning 与 Agent-first acceptance。不重新设计评测系统；基于现有 immutable result graph、artifact store、CLI 和 Agent Skill 扩展。Golden Core S1–S6 candidate changes 已批准并实现；post-review mock final evidence 为 52/52（run `run_1785085331148`）。不弱化 hard grader、不改写 Golden truth、不删除失败场景、不把 regression 显示为 pass、不自动 promotion。
 
@@ -177,10 +177,10 @@ Issue #100 是 T46 Evaluation Lab 的最后一个 ticket。本地实现完成后
 - Slice 4（#99）：Golden Core expansion、52 canonical scenarios、9 entry conditions、P0 scope filter、robustness variants、candidate governance。
 - Slice 5（#100）：showcase bundle、local viewer、live preview、schema migration、retention planning、agent acceptance。
 
-**未关闭项**：
+**关闭结果**：
 
-- Issue #100 本身未关闭（本地 commit，未 push/merge/close）。C1 真实 preview 已完成，C2 真实 agent acceptance 已完成，audited summary 已产出。
-- 父 Issue #93 未关闭。
+- Issue #100 已关闭；C1 真实 preview 与 C2 真实 agent acceptance 证据均已归档。
+- 父 Issue #93 已关闭；T46 的 #94–#100 全部完成。
 - Golden Core mock final evidence 为 52/52（post-review run `run_1785085331148`，integrity `91737377d5de9b5c6725fe3505c26c66743519350b2d199fc9dd0255e46863b2`）。S1–S6 candidate changes 已批准并实现；30/52 基线已过期。Golden Core verify 通过。
 - DeepSeek V1 价格表已冻结；普通 paid run 继续 fail-closed，dedicated Flash preview 按 `$0.10` worst-case gate 授权。
 - Active standard promotion 不在默认路径（需显式 Robert instruction + reviewable Git diff + matching fingerprints + all conflicts resolved）。

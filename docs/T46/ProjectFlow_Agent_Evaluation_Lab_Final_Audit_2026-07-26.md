@@ -1,13 +1,13 @@
 # ProjectFlow Agent Evaluation Lab — 最终审计/修复交接文档
 
 > **日期**：2026-07-26 UTC（北京时间 2026-07-27 完成收口）
-> **分支**：`glm/t46-100-showcase-closeout`（基于 `main` `8d80b79`）
+> **合并结果**：`main` commit `4728cf2`
 > **目标读者**：Robert（决策）、Coding Agent（接手修复）
-> **状态**：Issue #100 和父 Issue #93 **尚未关闭**。本文件是关闭候选的完整证据链。
+> **状态**：Issue #100 和父 Issue #93 已于 2026-07-27 关闭。
 
 ## 1. 结论与关闭建议
 
-T46 Evaluation Lab 的 7 个 Slice（Slice 0-5 + Golden Core）全部实现并经过跨 Slice 对抗审查与修复。**#100 与父 Issue #93 的技术关闭门禁已经满足**；剩余工作仅是提交、推送、合并和关闭 Issue。
+T46 Evaluation Lab 的 7 个 Slice（Slice 0-5 + Golden Core）全部实现并经过跨 Slice 对抗审查与修复。**#100 与父 Issue #93 已完成技术验收、合并并关闭**。
 
 | 条件 | 状态 | 说明 |
 |---|---|---|
@@ -25,7 +25,7 @@ T46 Evaluation Lab 的 7 个 Slice（Slice 0-5 + Golden Core）全部实现并�
 | Governed promotion 安全边界 | ✅ 按设计未执行 | active registry 仍空；证据不足的 mock rubric 正确显示 `anyEligibleForPromotion=false` |
 | 付费模型预算边界 | ✅ | V1 价格表已冻结；Flash bounded preview 通过，Pro 因 worst-case 超过 `$0.10` 在调用前拒绝 |
 
-**建议**：合并本分支后关闭 Issue #100，再关闭父 Issue #93。Active semantic promotion 需要另一条 Robert 显式指令，不是 T46 closeout 的前置条件；普通 paid run 保持 fail-closed 也是设计结果，不是遗留缺陷。
+**最终结果**：分支已合并到 `main`，Issue #100 与父 Issue #93 已关闭。Active semantic promotion 需要另一条 Robert 显式指令，不是 T46 closeout 的前置条件；普通 paid run 保持 fail-closed 也是设计结果，不是遗留缺陷。
 
 ---
 
@@ -326,7 +326,7 @@ scripts/eval-lab verify <new-run-id>
 | 12 | `git diff --check` clean | ✅ |
 | 13 | Governed promotion fail-closed | ✅ mock candidate 不可晋升，active registry 未变 |
 | 14 | 付费模型价格/预算门禁 | ✅ V1 表冻结；Flash 通过；Pro 调用前拒绝 |
-| 15 | push / merge / close | ❌ **未执行** |
+| 15 | push / merge / close | ✅ `main` `4728cf2`；#100/#93 CLOSED |
 
 **关闭判断**：技术 Gate #1–#14 全部通过。完成 Gate #15 后可关闭 #100/#93。
 

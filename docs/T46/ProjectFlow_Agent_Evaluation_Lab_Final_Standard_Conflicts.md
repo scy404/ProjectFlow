@@ -7,7 +7,7 @@
 
 ## 结论
 
-S1–S6 冲突已经按 Robert 的批准解决，跨 Slice 技术门禁全部通过。完成 merge 后可以关闭 Issue #100 和父 Issue #93。
+S1–S6 冲突已经按 Robert 的批准解决，跨 Slice 技术门禁全部通过。Issue #100 和父 Issue #93 已在 merge `4728cf2` 后关闭。
 
 跨 Slice 审查已经修复两个评测器可信度缺口：
 
@@ -280,6 +280,6 @@ Robert 已于 2026-07-26 批准 S1–S6，以下为实施与验证结果。
 
 ### 尚未执行的仓库操作
 
-- 未 push、未 merge、未关闭 Issue #100 或 #93
+- 已 push、merge 到 `main`（`4728cf2`），Issue #100 与 #93 已关闭
 - 未执行 active semantic standard promotion
 - 未降低任何 hard gate 或 P0 场景
