@@ -36,7 +36,12 @@
     "eval:active-registry": "tsx src/evaluation/lab/cli.ts active-registry",
     "eval:candidate-registry": "tsx src/evaluation/lab/cli.ts candidate-registry",
     "eval:conflict-catalog": "tsx src/evaluation/lab/cli.ts conflict-catalog",
-    "eval:golden-core": "tsx src/evaluation/lab/cli.ts golden-core"
+    "eval:golden-core": "tsx src/evaluation/lab/cli.ts golden-core",
+    "eval:showcase": "tsx src/evaluation/lab/cli.ts showcase",
+    "eval:viewer": "tsx src/evaluation/lab/cli.ts viewer",
+    "eval:preview": "tsx src/evaluation/lab/cli.ts preview",
+    "eval:retention": "tsx src/evaluation/lab/cli.ts retention",
+    "eval:agent-acceptance": "tsx src/evaluation/lab/cli.ts agent-acceptance"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "^0.80.3",

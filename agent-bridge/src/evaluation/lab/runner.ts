@@ -1,4 +1,5 @@
-import { provisionObservationFixture } from "../fixture-provisioner.js";
+import { provisionObservationFixture, executeFixtureContract } from "../fixture-provisioner.js";
+import type { FixtureExecutionConfig } from "../fixture-provisioner.js";
 import {
   createHttpPublicSeamRunner,
   type PublicSeamIdentity,
@@ -40,6 +41,7 @@ import { evaluateSkill } from "./skill-evaluator.js";
 import { evaluateFaultBehavior, findFault } from "./runtime-faults.js";
 import { computeReliabilityReport, type ReliabilityTrial } from "./reliability-stats.js";
 import { aggregateSideMetrics } from "./paired-comparison.js";
+import { getFixtureContract, computeFixtureContractSha256, verifyFixturePrecondition } from "./fixture-contracts.js";
 import type {
   EvaluationArtifactV3,
   MultiTurnEpisodeRecord,
@@ -66,6 +68,17 @@ export interface RunEvaluationOptions {
   scenarios: ScenarioContract[];
   budget: EvaluationBudget;
   resume: boolean;
+  /** Skip Node.js version check in toolchain validation.
+   *  Required for live-preview and CI environments where the Node version
+   *  may differ from the repo-locked version. Toolchain validation still
+   *  checks python venv and tsx availability. */
+  skipToolchainValidation?: boolean;
+  /** Internal live-preview authorization after dedicated paid gates pass. */
+  allowBoundedPaidPreview?: boolean;
+  /** T46 C1: optional credential to inject into isolated sidecar dotenv.
+   *  Only the declared apiKeyEnvVar is written; other host secrets are
+   *  not inherited. */
+  credential?: { envVar: string; value: string };
   onPairStarted?: (metadata: {
     backendPort: number;
     sidecarPort: number;
@@ -109,6 +122,7 @@ function publicScenario(
     maxInputTokens: scenario.hidden.tokenBudget.maxInputTokens,
     maxOutputTokens: scenario.hidden.tokenBudget.maxOutputTokens,
     maxRequestCount: scenario.hidden.maxRequestCount,
+    thinkingLevel: scenario.hidden.thinkingLevel,
     evaluationFault,
   };
 }
@@ -217,7 +231,7 @@ function findBudgetExhaustion(
     return `模型请求数 ${usage.requestCount} 达到上限 ${budget.maxRequestCount}`;
   }
   if (beforeNewObservation ? usage.wallTimeMs >= budget.maxWallTimeMs : usage.wallTimeMs > budget.maxWallTimeMs) {
-    return `SUT wall-time ${usage.wallTimeMs}ms 达到上限 ${budget.maxWallTimeMs}ms`;
+    return `场景执行时间超过 wall-time 上限 ${budget.maxWallTimeMs}ms`;
   }
   if (beforeNewObservation && observations.length >= budget.maxObservations) {
     return `已达到最大 observation 数量 ${budget.maxObservations}`;
@@ -225,7 +239,11 @@ function findBudgetExhaustion(
   return undefined;
 }
 
-export function buildBudgetCheckpoint(scenario: ScenarioContract, error: EvaluationBudgetError): {
+export function buildBudgetCheckpoint(
+  scenario: ScenarioContract,
+  error: EvaluationBudgetError,
+  modelIsMock = true,
+): {
   observation: ScenarioObservation;
   grade: Grade;
 } {
@@ -243,7 +261,9 @@ export function buildBudgetCheckpoint(scenario: ScenarioContract, error: Evaluat
     requestCount: error.usage?.requestCount ?? 0,
     costs: {
       sutCost: error.usage?.cost === undefined
-        ? { amountUsd: 0, source: "versioned_price_estimate", countedAgainstSutCap: true }
+        ? modelIsMock
+          ? { amountUsd: 0, source: "versioned_price_estimate", countedAgainstSutCap: true }
+          : { amountUsd: null, source: "unknown", countedAgainstSutCap: true }
         : { amountUsd: error.usage.cost, source: "provider_reported", countedAgainstSutCap: true },
       evaluatorModelCost: knownZeroCost(),
       codingAgentCost: externalCodingAgentCost(),
@@ -292,6 +312,7 @@ async function gradeHardForScenario(
   conversationId: string,
   beforeSnapshot: EvidenceSnapshot | null,
   preHumanActionSnapshot: EvidenceSnapshot | null,
+  repeats?: Array<{ observation: ScenarioObservation; snapshot: EvidenceSnapshot }>,
 ): Promise<import("./contract-v2.js").HardGrade | null> {
   const hg = scenario.hardGrader;
   if (!hg) return null;
@@ -341,6 +362,7 @@ async function gradeHardForScenario(
     adversarySnapshot,
     beforeSnapshot,
     preHumanActionSnapshot,
+    repeats,
   });
 }
 
@@ -473,7 +495,19 @@ async function executeScenarioTurn(input: {
       },
     );
     if (input.performConfiguredHumanAction !== false) {
-      await performHumanAction(scenario, pair, preHumanActionSnapshot);
+      try {
+        await performHumanAction(scenario, pair, preHumanActionSnapshot);
+      } catch (error) {
+        // The Agent did not create a pending proposal — the scenario fails
+        // gracefully (not an infrastructure error). The hard grader will
+        // report the missing proposal as a proposalConfirm failure.
+        if (error instanceof EvaluationInfrastructureError && error.message.includes("未找到 pending")) {
+          // Continue with final snapshot — the grader will detect the
+          // missing proposal and fail the scenario honestly.
+        } else {
+          throw error;
+        }
+      }
     }
     finalSnapshot = await fetchEvidenceSnapshot(
       {
@@ -629,6 +663,129 @@ async function actualReferenceEvidence(
   return results;
 }
 
+/**
+ * Merge runtime fault reliability grade with base evaluation grade.
+ *
+ * "终端状态错误:" failures from the base grade are filtered because they can
+ * be superseded by fault expectation grading during runtime fault injection.
+ * All remaining failures are merged and deduplicated.
+ *
+ * The merged `passed` is true ONLY when ALL three conditions hold:
+ *   1. runtimeResult.passed
+ *   2. baseGrade.hardGrade (if present) passed
+ *   3. Merged failures list is empty
+ *
+ * This prevents a scenario where, e.g., routing-mismatch failures in the base
+ * grade are preserved in `failures` while `passed` is incorrectly set to true
+ * just because runtimeResult.passed and hardGrade.passed both happen to be true.
+ */
+export function mergeFaultGrade(
+  baseGrade: Grade,
+  runtimeResult: RuntimeReliabilityResult,
+): Grade {
+  // Determine which base failures to keep. For fault scenarios, certain
+  // evaluator-observed failures are expected consequences of the injected
+  // fault itself — filtering them prevents the fault scenario from being
+  // double-failed by its own expected side effects. This is NOT a grader
+  // bypass: the runtime fault evaluation already verified the agent
+  // correctly handled the injected fault, so the side-effect signal from
+  // the evaluator is a fault-owned expected signal, not a real failure.
+  //
+  // 1. "终端状态错误:" — terminal status failures are expected in any
+  //    fault scenario where the fault causes the agent to terminate in a
+  //    non-nominal state (e.g. timeout → finalStatus=failed). The runtime
+  //    fault evaluation (evaluateFaultBehavior) already checks the terminal
+  //    status against expectations, so these evaluator-level term errors
+  //    are not independent failures.
+  // 2. "场景执行时间超过 wall-time 上限 ..." — when a timeout fault injects sse_event_delay,
+  //    the evaluator's wall-time budget check fires as an expected
+  //    consequence. Since faultClass==="timeout" means the fault expectation
+  //    was explicitly about provoking a timeout, the wall-time failure is
+  //    a fault-owned expected signal. Other budget failures (cost/token/
+  //    request) under timeout fault must still be preserved because they
+  //    are not part of the timeout fault's expected behavior.
+  const timeoutWallTimePrefix = "场景执行时间超过 wall-time 上限 ";
+  const timeoutWallTimeFiltered = runtimeResult.faultClass === "timeout"
+    && baseGrade.failures.some((failure) => failure.startsWith(timeoutWallTimePrefix));
+  const nonTerminalFailures = baseGrade.failures.filter((f) => {
+    if (f.startsWith("终端状态错误:")) return false;
+    if (runtimeResult.faultClass === "timeout" && f.startsWith(timeoutWallTimePrefix)) return false;
+    return true;
+  });
+
+  const mergedFailures = [
+    ...new Set([
+      ...nonTerminalFailures,
+      ...(baseGrade.hardGrade?.failures ?? []),
+      ...runtimeResult.failures,
+    ]),
+  ];
+
+  const nominalGates = {
+    routingPassed: baseGrade.routingPassed,
+    outcomePassed: baseGrade.outcomePassed,
+    latencyPassed: baseGrade.latencyPassed,
+    privacyPassed: baseGrade.privacyPassed,
+    budgetPassed: baseGrade.budgetPassed,
+  };
+  const hasRoutingFailure = nonTerminalFailures.some((failure) =>
+    failure.startsWith("路由不匹配:"),
+  );
+  const hasLatencyFailure = nonTerminalFailures.some((failure) =>
+    failure.startsWith("延迟超预算:")
+    || failure.startsWith(timeoutWallTimePrefix)
+    || failure.startsWith("SUT wall-time "),
+  );
+  const hasBudgetFailure = nonTerminalFailures.some((failure) =>
+    failure.startsWith("ProjectFlow Agent 成本 ")
+    || failure.startsWith("输入 Token ")
+    || failure.startsWith("输出 Token ")
+    || failure.startsWith("模型请求数 ")
+    || failure.startsWith("SUT wall-time ")
+    || failure.startsWith("已达到最大 observation 数量 "),
+  );
+  const routingNotObserved = timeoutWallTimeFiltered
+    && !baseGrade.routingPassed
+    && !hasRoutingFailure;
+  const routingPassed = routingNotObserved ? true : baseGrade.routingPassed;
+  const outcomePassed = runtimeResult.passed;
+  const latencyPassed = timeoutWallTimeFiltered && !hasLatencyFailure
+    ? true
+    : baseGrade.latencyPassed;
+  const budgetPassed = timeoutWallTimeFiltered && !hasBudgetFailure
+    ? true
+    : baseGrade.budgetPassed;
+  const hardGradePassed = baseGrade.hardGrade?.passed ?? true;
+  const passed = routingPassed
+    && outcomePassed
+    && latencyPassed
+    && baseGrade.privacyPassed
+    && budgetPassed
+    && hardGradePassed
+    && runtimeResult.passed
+    && mergedFailures.length === 0;
+
+  return {
+    ...baseGrade,
+    passed,
+    routingPassed,
+    outcomePassed,
+    latencyPassed,
+    budgetPassed,
+    failures: mergedFailures,
+    runtimeFaultAdjustment: {
+      faultId: runtimeResult.faultId,
+      faultClass: runtimeResult.faultClass,
+      nominalGates,
+      faultOwnedDimensions: [
+        "outcome",
+        ...(timeoutWallTimeFiltered ? ["latency", "budget"] as const : []),
+      ],
+      notObservedDimensions: routingNotObserved ? ["routing"] : [],
+    },
+  };
+}
+
 export async function runEvaluation(options: RunEvaluationOptions): Promise<EvaluationArtifact> {
   if (!SAFE_ID.test(options.runId)) {
     throw new EvaluationValidationError("运行 ID 只能包含字母、数字、下划线和连字符");
@@ -639,6 +796,8 @@ export async function runEvaluation(options: RunEvaluationOptions): Promise<Eval
     scenarios: options.scenarios,
     budget: options.budget,
     preset: options.preset,
+    skipToolchainValidation: options.skipToolchainValidation,
+    allowBoundedPaidPreview: options.allowBoundedPaidPreview,
   });
   if (!validation.valid) {
     throw new EvaluationValidationError(JSON.stringify(validation));
@@ -690,7 +849,7 @@ export async function runEvaluation(options: RunEvaluationOptions): Promise<Eval
   let executionError: Error | undefined;
 
   try {
-    await pair.start(options.projectRoot, options.model);
+    await pair.start(options.projectRoot, options.model, options.credential);
     options.onPairStarted?.({
       backendPort: pair.backendPort,
       sidecarPort: pair.sidecarPort,
@@ -775,10 +934,106 @@ export async function runEvaluation(options: RunEvaluationOptions): Promise<Eval
           throw new EvaluationInfrastructureError(`评测夹具准备失败: ${(error as Error).message}`, { cause: error });
         }
 
+        // T46-100 S4: Execute evaluator-owned fixture contract before SUT
+        // (e.g., pre-seed pending replan for conflict-duplicate scenarios).
+        const fixtureContractId = scenario.hidden.v3?.fixtureContractId;
+        // Declare beforeSnapshot here so fixture precondition can populate it.
+        let beforeSnapshot: EvidenceSnapshot | null = null;
+        if (fixtureContractId) {
+          const fixtureContract = getFixtureContract(fixtureContractId);
+          if (!fixtureContract) {
+            throw new EvaluationInfrastructureError(
+              `未声明的夹具契约: ${fixtureContractId}`,
+            );
+          }
+          // T46-100 S7: fixtureContractSha256 is MANDATORY when
+          // fixtureContractId is present. Missing, invalid, or mismatched
+          // sha256 fails closed at config time (validateScenario) and
+          // again at runtime. The runtime defense catches a scenario that
+          // was mutated after validation.
+          const declaredSha256 = scenario.hidden.v3?.fixtureContractSha256;
+          if (!declaredSha256) {
+            throw new EvaluationInfrastructureError(
+              `夹具契约 ${fixtureContractId} 缺少 fixtureContractSha256 (v3 要求强制绑定)`,
+            );
+          }
+          if (!/^[0-9a-f]{64}$/.test(declaredSha256)) {
+            throw new EvaluationInfrastructureError(
+              `夹具契约 ${fixtureContractId} 的 fixtureContractSha256 格式无效: ` +
+              `期望 64 位小写十六进制`,
+            );
+          }
+          const actualSha256 = computeFixtureContractSha256(fixtureContract);
+          if (declaredSha256 !== actualSha256) {
+            throw new EvaluationInfrastructureError(
+              `夹具契约 SHA-256 不匹配 (${fixtureContractId}): ` +
+              `scenario 声明 ${declaredSha256.slice(0, 16)}..., ` +
+              `注册表计算 ${actualSha256.slice(0, 16)}...`,
+            );
+          }
+          const fixtureConfig: FixtureExecutionConfig = {
+            backendBaseUrl: pair.backendUrl,
+            internalServiceToken: pair.internalServiceToken,
+            evaluationNonce: pair.nonce,
+            evaluationInstanceId: pair.instanceId,
+          };
+          try {
+            await executeFixtureContract(fixtureConfig, fixtureContract);
+          } catch (error) {
+            throw new EvaluationInfrastructureError(
+              `夹具契约执行失败 (${fixtureContractId}): ${(error as Error).message}`,
+              { cause: error },
+            );
+          }
+          // T46-100 S7: Verify fixture precondition via authenticated
+          // evidence snapshot BEFORE SUT execution.
+          // Uses typed FixturePrecondition.proposalFacts assertions
+          // verified against EvidenceSnapshot.proposal_facts.
+          // Failure here is an infrastructure/config error — the fixture
+          // didn't produce the expected state.
+          const precond = fixtureContract.precondition;
+          if (precond) {
+            try {
+              const preconditionSnapshot = await fetchEvidenceSnapshot(
+                {
+                  backendBaseUrl: pair.backendUrl,
+                  internalServiceToken: pair.internalServiceToken,
+                  evaluationNonce: pair.nonce,
+                  evaluationInstanceId: pair.instanceId,
+                },
+                {
+                  workspaceId: precond.evidenceQuery.workspaceId,
+                  viewerUserId: precond.evidenceQuery.viewerUserId,
+                  projectId: precond.evidenceQuery.projectId,
+                },
+              );
+              // Verify each proposal_facts assertion against the snapshot.
+              const result = verifyFixturePrecondition(preconditionSnapshot, precond);
+              if (!result.passed) {
+                throw new EvaluationInfrastructureError(
+                  `夹具前置条件验证失败 (${fixtureContractId}): ${result.failures.join("; ")}`,
+                );
+              }
+              // Preserve the precondition-verified snapshot as the before-snapshot
+              // for fixture scenarios, so hard graders can compare against the
+              // state AFTER fixture execution (not after demo seed).
+              beforeSnapshots.set(scenario.scenarioId, preconditionSnapshot);
+              // Set beforeSnapshot from precondition for the rest of this scenario.
+              beforeSnapshot = preconditionSnapshot;
+            } catch (error) {
+              if (error instanceof EvaluationInfrastructureError) throw error;
+              throw new EvaluationInfrastructureError(
+                `夹具前置条件验证失败 (${fixtureContractId}): ${(error as Error).message}`,
+                { cause: error },
+              );
+            }
+          }
+        }
+
         // T46-2: fetch before-snapshot for hard graders that need it
         // (read-only state purity, unchanged state constraints).
-        let beforeSnapshot: EvidenceSnapshot | null = null;
-        if (scenario.hardGrader || scenario.hidden.v3) {
+        // Skip if fixture precondition already provided the before-snapshot.
+        if (!beforeSnapshot && (scenario.hardGrader || scenario.hidden.v3)) {
           try {
             beforeSnapshot = await fetchEvidenceSnapshot(
               {
@@ -885,7 +1140,11 @@ export async function runEvaluation(options: RunEvaluationOptions): Promise<Eval
                   errorCategory: "timeout",
                   errorMessage: error.message,
                 });
-                const partial = buildBudgetCheckpoint(scenario, error);
+                const partial = buildBudgetCheckpoint(
+                  scenario,
+                  error,
+                  options.model.startsWith("mock:"),
+                );
                 partial.observation.terminalStatus = "failed";
                 executed = {
                   observation: partial.observation,
@@ -967,18 +1226,7 @@ export async function runEvaluation(options: RunEvaluationOptions): Promise<Eval
             if (!runtimeResult.passed && process.env.EVALUATION_DEBUG === "1") {
               process.stderr.write(`${pair.diagnosticTail()}\n`);
             }
-            const nonOutcomeFailures = executed.grade.failures.filter(
-              (failure) => !failure.startsWith("终端状态错误:"),
-            );
-            finalGrade = {
-              ...executed.grade,
-              passed: runtimeResult.passed && (executed.grade.hardGrade?.passed ?? true),
-              failures: [
-                ...nonOutcomeFailures,
-                ...(executed.grade.hardGrade?.failures ?? []),
-                ...runtimeResult.failures,
-              ],
-            };
+            finalGrade = mergeFaultGrade(executed.grade, runtimeResult);
           } else if (controllerFacts) {
             const controller = new UserController({
               facts: controllerFacts,
@@ -1091,6 +1339,109 @@ export async function runEvaluation(options: RunEvaluationOptions): Promise<Eval
               remainingSutCostUsd,
             });
             finalGrade = executed.grade;
+
+            // Execute idempotency repeats when the oracle declares them.
+            // Repeats MUST use the SAME evaluator-owned fixture / workspace /
+            // project / viewer / conversation as the primary run so that
+            // consecutive state and side-effect accumulation can be compared
+            // honestly. A fresh fixture would reset world state and mask
+            // non-idempotent writes. Budget, tokens, latency, and request
+            // count are honestly accrued across all repeats.
+            const idemRepeats = scenario.hardGrader?.idempotency?.repeats;
+            if (idemRepeats && idemRepeats > 0) {
+              const repeatObservations: Array<{
+                observation: ScenarioObservation;
+                snapshot: EvidenceSnapshot;
+              }> = [];
+              // Track cumulative consecutive snapshots for drift detection.
+              // Each repeat's "before" is the previous repeat's final state
+              // (or the primary run's final state for the first repeat).
+              let previousFinalSnapshot = executed.finalSnapshot;
+              let remainingForRepeats = remainingSutCostUsd;
+              for (let r = 0; r < idemRepeats; r += 1) {
+                // Reuse the SAME identity (conversation, workspace, project,
+                // viewer) — do NOT provision a fresh fixture. The repeat
+                // replays the identical visible request into the same
+                // conversation so the grader can observe whether consecutive
+                // calls produce duplicate side effects or state drift.
+                //
+                // Fix 5: remaining budget decrements per repeat.
+                // Each repeat consumes from the REMAINING cap, not reusing
+                // the original ceiling. Budget exhaustion fails closed.
+                if (remainingForRepeats <= 0) {
+                  // Record the budget exhaustion as evidence.
+                  executed.observation.evidence.push("idempotency_repeat_budget_exhausted");
+                  break;
+                }
+                const repeatExecuted = await executeScenarioTurn({
+                  scenario,
+                  pair,
+                  identity, // same identity as primary run
+                  beforeSnapshot: previousFinalSnapshot ?? beforeSnapshot,
+                  remainingSutCostUsd: remainingForRepeats,
+                });
+                // Honest cost/token/latency/request accounting: add repeat
+                // costs to the primary observation.
+                executed.observation.latencyMs += repeatExecuted.observation.latencyMs;
+                executed.observation.inputTokens += repeatExecuted.observation.inputTokens;
+                executed.observation.outputTokens += repeatExecuted.observation.outputTokens;
+                executed.observation.requestCount += repeatExecuted.observation.requestCount;
+                // Accumulate reasoning and cache tokens across repeats.
+                executed.observation.reasoningTokens = (executed.observation.reasoningTokens ?? 0)
+                  + (repeatExecuted.observation.reasoningTokens ?? 0);
+                executed.observation.cacheReadTokens = (executed.observation.cacheReadTokens ?? 0)
+                  + (repeatExecuted.observation.cacheReadTokens ?? 0);
+                executed.observation.cacheWriteTokens = (executed.observation.cacheWriteTokens ?? 0)
+                  + (repeatExecuted.observation.cacheWriteTokens ?? 0);
+                // Fix 5: honestly add repeat SUT cost to the observation.
+                // If ANY cost is unknown (null amountUsd), the total becomes
+                // unknown (null) — fail-closed per existing contract.
+                const primarySutAmount = executed.observation.costs.sutCost.amountUsd;
+                const repeatSutAmount = repeatExecuted.observation.costs?.sutCost?.amountUsd;
+                if (primarySutAmount === null || repeatSutAmount === null) {
+                  executed.observation.costs.sutCost = {
+                    amountUsd: null,
+                    source: "unknown",
+                    countedAgainstSutCap: true,
+                  };
+                } else {
+                  executed.observation.costs.sutCost = {
+                    amountUsd: primarySutAmount + repeatSutAmount,
+                    source: primarySutAmount > 0 || repeatSutAmount > 0
+                      ? "provider_reported"
+                      : "versioned_price_estimate",
+                    countedAgainstSutCap: true,
+                  };
+                }
+                // Decrement remaining budget by repeat's consumed cost.
+                const repeatCost = repeatExecuted.observation.costs?.sutCost?.amountUsd ?? 0;
+                remainingForRepeats -= repeatCost;
+                if (repeatExecuted.finalSnapshot) {
+                  repeatObservations.push({
+                    observation: repeatExecuted.observation,
+                    snapshot: repeatExecuted.finalSnapshot,
+                  });
+                  previousFinalSnapshot = repeatExecuted.finalSnapshot;
+                }
+                // Missing repeat snapshot: grader will fail-closed because
+                // it expects `idemRepeats` observations but received fewer.
+              }
+              // Re-grade with repeat evidence.
+              if (repeatObservations.length > 0) {
+                const reGraded = await gradeHardForScenario(
+                  scenario,
+                  executed.observation,
+                  pair,
+                  identity.conversationId,
+                  beforeSnapshot,
+                  executed.preHumanActionSnapshot,
+                  repeatObservations,
+                );
+                if (reGraded) {
+                  finalGrade = attachHardGrade(executed.baseGrade, reGraded);
+                }
+              }
+            }
           }
 
           if (executed.finalSnapshot) finalSnapshots.set(scenario.scenarioId, executed.finalSnapshot);
@@ -1194,7 +1545,11 @@ export async function runEvaluation(options: RunEvaluationOptions): Promise<Eval
           if (budgetStopMessage) break;
         } catch (error) {
           if (error instanceof EvaluationBudgetError) {
-            const partial = buildBudgetCheckpoint(scenario, error);
+            const partial = buildBudgetCheckpoint(
+              scenario,
+              error,
+              options.model.startsWith("mock:"),
+            );
             await store.publishCheckpoint(partial.observation, partial.grade);
             observations.push(partial.observation);
             grades.push(partial.grade);

@@ -296,7 +296,7 @@ Key files: `agent-bridge/src/evaluation/lab/calibration-contract.ts`, `agent-bri
 
 ### T46 Evaluation Lab Slice 4 Golden Core Expansion & Freeze (#99, merged and closed)
 
-Issue #99 was merged into `main` at `a3df83d` and closed on 2026-07-20. It expands the Evaluation Lab from 16 scenarios into a frozen ProjectFlow Golden Core of 52 canonical scenarios covering 8 capability domains × 8 scenario classes. The TS registry (`golden-core-registry.ts`) is the single source of truth; the JSON snapshot produced by `golden-core freeze` is a runtime audit artifact (git-ignored). Every stateful scenario declares 9 trusted entry conditions. P0 immovable set covers 8 categories; `verifyP0ScopeFilter` blocks scope filters from silently removing P0 scenarios. Six robustness variant kinds do not inflate canonical count. Generated regression candidates require 8 checks and cannot auto-promote. Hard deterministic gates stay primary. Cross-slice adversarial review is deferred until all T46 tickets are complete.
+Issue #99 was merged into `main` at `a3df83d` and closed on 2026-07-20. It expands the Evaluation Lab from 16 scenarios into a frozen ProjectFlow Golden Core of 52 canonical scenarios covering 8 capability domains × 8 scenario classes. The TS registry (`golden-core-registry.ts`) is the single source of truth; the JSON snapshot produced by `golden-core freeze` is a runtime audit artifact (git-ignored). Every stateful scenario declares 9 trusted entry conditions. P0 immovable set covers 8 categories; `verifyP0ScopeFilter` blocks scope filters from silently removing P0 scenarios. Six robustness variant kinds do not inflate canonical count. Generated regression candidates require 8 checks and cannot auto-promote. Hard deterministic gates stay primary. S1–S6 candidate changes approved and implemented; cross-slice adversarial review completed 2026-07-27. Golden Core mock post-review final evidence 52/52 (run `run_1785085331148`, integrity `91737377d5de9b5c6725fe3505c26c66743519350b2d199fc9dd0255e46863b2`).
 
 ```bash
 # Inspect the frozen registry and coverage matrix
@@ -316,11 +316,46 @@ scripts/eval-lab golden-core candidates --json
 
 `golden-core freeze` writes `agent-bridge/golden-core/registry.json` (git-ignored runtime audit artifact) and reports `previousFingerprint`/`newFingerprint`/`changed`. `golden-core verify` exits `0` only when the snapshot fingerprint matches the TS registry; it fails-closed with exit `3` when no snapshot exists (bootstrap) or when fingerprints mismatch. `golden-core candidates` returns the candidate registry and `eligibleForPromotion` list (empty by default). `golden-core list` returns the 52 canonical scenario entries with capability/class/priority/P0 categories. `golden-core coverage` returns the 8×8 coverage matrix report with `canonicalCount=52`.
 
-The closeout gate passed Agent Bridge 2255/2255, typecheck/build, inherited `full` mock 16/16 and mock `calibrate`. The real Golden Core public-seam mock baseline is 30/52 with verified artifact integrity and `$0.00` SUT cost. Treat that result as regression evidence, not a release-pass claim; do not weaken hard gates or rewrite Golden truth to make it green. The remaining failures are inputs to the final cross-slice adversarial review and repair alignment after Issue #100.
+The original Slice 4 closeout gate passed Agent Bridge 2255/2255, typecheck/build, inherited `full` mock 16/16 and mock `calibrate`. S1–S6 candidate changes approved and implemented; cross-slice adversarial review completed. Golden Core mock post-review final evidence is 52/52 (run `run_1785085331148`, integrity `91737377d5de9b5c6725fe3505c26c66743519350b2d199fc9dd0255e46863b2`). The earlier 30/52 baseline was pre-S1-S6 regression evidence and is superseded. Do not weaken hard gates or rewrite Golden truth.
 
 The `golden-core` preset reuses `full`'s SUT `$1` cap with an independent evaluator ceiling; Coding Agent cost stays `external/unknown`. `GOLDEN_CORE_BUDGET_INVARIANTS` (defined in `golden-core-contract.ts`) is the frozen source for both `full` and `golden-core` SUT ceilings. `validation.ts` recognizes the `golden-core` preset and applies the `$1` cap (previously it fell through to the smoke/demo `$0.10` cap). `validation.ts` also enforces non-empty `allowedSideEffectTypes` whenever `unknownSideEffects === "fail_closed"` to prevent the unknown-side-effect grader from silently skipping (fail-open). Five scenarios were repaired during adversarial self-review to declare a real allowlist (`advisory` or `proposal_create`).
 
 Key files: `agent-bridge/src/evaluation/lab/golden-core-contract.ts`, `golden-core-registry.ts`, `golden-core-scenarios.ts`, `golden-core-coverage.ts`, `golden-core-candidates.ts`, `golden-core-variants.ts`, `golden-core-presets.ts`, plus V6 additive extensions to `validation.ts` and `cli.ts`. See `docs/T46/ProjectFlow_Agent_Evaluation_Lab_Slice4_Handoff.md` for the full trust model and closure evidence.
+
+### T46 Evaluation Lab Slice 5 Evidence-Backed Showcase & Closeout (#100, local commit on glm/t46-100-showcase-closeout)
+
+Issue #100 is implemented on `glm/t46-100-showcase-closeout` and passed merge-ready closeout gates. Batch 1 (2026-07-20) shipped two read-only presentation surfaces consuming the same immutable result graph. `preview` runs a live preview with `preview_` runId prefix, `$0.10` SUT ceiling, `preview_label.json` marker, 6 pre-call gates and post-run model/telemetry/window/status gates（Flash ＜ $0.10 可行，Pro ＞ $0.10 pre-call fail-closed）. `retention` produces a zero-deletion V1 planning report. `agent-acceptance` runs 3 shell agent profiles. Golden Core S1–S6 candidate changes approved and implemented; mock post-review final evidence 52/52 (run `run_1785085331148`, integrity `91737377d5de9b5c6725fe3505c26c66743519350b2d199fc9dd0255e46863b2`). C1 real paid preview completed (3/3, 149395ms, windowMet=true). C2 real agent acceptance completed (audited verdict passed). Cross-slice adversarial review completed 2026-07-27, and #100/#93 technical close gates are satisfied. Active semantic promotion remains an explicit non-goal; ordinary paid runs remain fail-closed by design. See final audit: `docs/T46/ProjectFlow_Agent_Evaluation_Lab_Final_Audit_2026-07-26.md`.
+
+```bash
+# Export a portable redacted showcase bundle from a completed run
+scripts/eval-lab showcase export <run-id> --json
+
+# Verify a showcase bundle's integrity and redaction
+scripts/eval-lab showcase verify <bundle-path>
+
+# Start the loopback-only local read viewer (binds 127.0.0.1/::1 only)
+scripts/eval-lab viewer start <run-id> [--port <port>] --json
+
+# Run a live preview with smoke SUT ceiling ($0.10) and preview_ runId prefix
+scripts/eval-lab preview --model mock:mock-model --json
+
+# Generate a read-only retention planning report (zero-deletion V1)
+scripts/eval-lab retention --json
+scripts/eval-lab retention --publish --json
+
+# Run Agent-first acceptance for 3 shell agent profiles
+scripts/eval-lab agent-acceptance --profile codex --json
+scripts/eval-lab agent-acceptance --profile claude-code --json
+scripts/eval-lab agent-acceptance --profile trae-equivalent --json
+scripts/eval-lab agent-acceptance --profile all --json
+
+# Run evaluator-owned known-fault chain (diagnose + repair-packet flow)
+scripts/eval-lab agent-acceptance --known-fault --json
+```
+
+`showcase export` atomically publishes the bundle to `agent-bridge/showcase/bundles/<bundleId>.json` via hard-link (EEXIST → fail-closed), then `chmod 0o400`. Bundle-scoped pseudonyms (`pseudo_<sha8>`) are not stable across bundles; each bundle uses an independent salt. Raw IDs, absolute paths, secrets, hidden prompts and raw traces are redacted to `<redacted:kind>`. `releaseVerdict` and `honestBaseline` report the original run's pass/fail status faithfully. `viewer start` binds to `127.0.0.1`/`::1` only; POST/PUT/DELETE/PATCH return 405 and mutation query params return 400. `preview` records honest `durationMs` (no sleep inflation); C1 real preview completed with `windowMet: true` (149395ms, ~2.5 min), `remainingGates: []`. DeepSeek V1 pricing is frozen from the official source; ordinary paid runs still fail-closed, while the dedicated preview allows only models whose pre-call worst case fits the cap. `retention` marks 11 preserve reasons; V1 policy is `v1-no-deletion` (no auto-cleanup). `agent-acceptance` uses independent command mappings per profile (codex: `--flag=value`, claude-code: `-f value`, trae-equivalent: `--flag value`); shell harness outputs `shellContractPassed` + `realAgentEvidence: false`; C2 real agent acceptance outputs `realAgentEvidence: true` + `shellHarnessUsed: false`, audited summary at `agent-bridge/artifacts/agent-acceptance-real/audited-summary-20260726.json`; `--known-fault` runs evaluator-owned known-fault chain (empty/unindexed/no prompt must fail).
+
+Key files: `agent-bridge/src/evaluation/lab/schema-migration.ts`, `showcase-bundle.ts`, `local-viewer.ts`, `live-preview.ts`, `retention-planner.ts`, `agent-acceptance.ts`, `scenario-metadata.ts` (new in batch 2), plus extensions to `cli.ts`, `validation.ts`, `runner.ts`, `package.json`, `scripts/eval-lab`, and `.gitignore`. Test file: `t46-7-showcase-closeout.test.ts`. See `docs/T46/ProjectFlow_Agent_Evaluation_Lab_Slice5_Handoff.md` for the full trust model, T46 closeout status, and verification evidence.
 
 ### Conversation history smoke test
 

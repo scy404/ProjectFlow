@@ -250,7 +250,10 @@ describe("T46-5 calibration runner — pipeline basics", () => {
     expect(result.artifact.integritySha256).toMatch(/^[a-f0-9]+$/);
     expect(result.artifact.exitGateEvidence).toBeDefined();
     expect(result.artifact.passed).toBe(true);
-    expect(result.artifact.promotionEligibility.anyEligible).toBe(true);
+    expect(result.artifact.promotionEligibility.anyEligible).toBe(false);
+    expect(
+      result.artifact.promotionEligibility.perCandidate[0]?.failureReasons,
+    ).toContain("semantic rubric verdict=needs_review; 必须 pass");
 
     // §3 Published paths must be returned.
     expect(result.published.calibrationArtifactPath).toBe("calibration-artifact.json");
@@ -258,6 +261,34 @@ describe("T46-5 calibration runner — pipeline basics", () => {
     expect(result.published.candidateRegistryPath).toBe("candidate-registry.json");
     expect(result.published.standardConflictsPath).toBe("standard-conflicts.json");
     expect(result.published.standardDiffPaths).toHaveLength(1);
+  });
+
+  it("only reports a semantic candidate eligible when its payload is evidence-ready", async () => {
+    const runId = "promotion-evidence-ready";
+    const { store, tempProjectRoot } = await makeStore(runId);
+    const readyRubric: SemanticRubric = {
+      ...P0_PLANNING_SPECIFICITY_RUBRIC,
+      evidenceReferences: [
+        {
+          reference: "calibrations/promotion-evidence-ready/anchor-evidence.json",
+          referenceSha256: "a".repeat(64),
+        },
+      ],
+      verdict: "pass",
+      score: "excellent",
+      reason: "冻结 anchor 的排序、重复稳定性和 evidence chain 均通过。",
+      confidence: 0.95,
+    };
+    const input = buildBasicInput(runId, tempProjectRoot, {
+      rubrics: [readyRubric],
+    });
+    const result = await runCalibrationPipeline(store, input);
+
+    expect(result.artifact.promotionEligibility.anyEligible).toBe(true);
+    expect(result.artifact.promotionEligibility.perCandidate[0]).toMatchObject({
+      eligible: true,
+      failureReasons: [],
+    });
   });
 
   it("all candidate standards start with status=candidate (no auto-promotion)", async () => {

@@ -27,6 +27,7 @@ import {
   STANDARDS_REGISTRY_SCHEMA_VERSION,
   type CandidateStandard,
   type PromotionApprovalRecord,
+  type SemanticRubric,
   type StandardEntry,
   type StandardsRegistry,
 } from "./calibration-contract.js";
@@ -49,6 +50,55 @@ export const ACTIVE_REGISTRY_DIR = "agent-bridge/standards/active";
 export const ACTIVE_REGISTRY_FILE = "registry.json";
 
 export const CANDIDATE_REGISTRY_DIR = "agent-bridge/standards/candidate";
+
+/**
+ * Return the evidence-readiness failures that must be resolved before a
+ * candidate can enter the active registry.
+ *
+ * Calibration acceptance and conflict resolution prove that the calibration
+ * process was stable; they do not prove that an individual semantic standard
+ * contains a usable verdict and its supporting evidence. Keep this check in
+ * the registry module so both eligibility reporting and the only active
+ * mutation path enforce the same fail-closed boundary.
+ */
+export function getCandidatePromotionReadinessFailures(
+  candidate: CandidateStandard,
+): string[] {
+  if (candidate.entry.kind !== "semantic_rubric") return [];
+
+  const rubric = candidate.entry.payload as SemanticRubric;
+  const failures: string[] = [];
+  if (rubric.verdict !== "pass") {
+    failures.push(`semantic rubric verdict=${rubric.verdict}; 必须 pass`);
+  }
+  if (!rubric.score || !rubric.scoreScale.includes(rubric.score)) {
+    failures.push("semantic rubric score 缺失或不在冻结 scoreScale 中");
+  }
+  if (!rubric.reason.trim()) {
+    failures.push("semantic rubric reason 缺失");
+  }
+  if (
+    rubric.evidenceReferences.length === 0
+    || rubric.evidenceReferences.some(({ reference }) => !reference.trim())
+  ) {
+    failures.push("semantic rubric evidenceReferences 缺失或无效");
+  }
+  if (
+    !Number.isFinite(rubric.confidence)
+    || rubric.confidence <= 0
+    || rubric.confidence > 1
+  ) {
+    failures.push("semantic rubric confidence 必须在 (0, 1] 范围内");
+  }
+  if (
+    !rubric.judgeManifestRef.judgeId.trim()
+    || !Number.isInteger(rubric.judgeManifestRef.judgeVersion)
+    || rubric.judgeManifestRef.judgeVersion <= 0
+  ) {
+    failures.push("semantic rubric judgeManifestRef 缺失或无效");
+  }
+  return failures;
+}
 
 // ---------------------------------------------------------------------------
 // §2 Schema version validation
@@ -251,6 +301,15 @@ export function applyPromotionApproval(
   if (unresolved.length > 0) {
     throw new EvaluationValidationError(
       `candidate ${candidate.candidateId} 有未解决 conflict: ${unresolved.join(", ")}`,
+    );
+  }
+  // §3.5 A human approval cannot turn incomplete semantic evidence into a
+  // valid active standard. Re-check at the mutation boundary rather than
+  // trusting a prior eligibility report that could be stale or tampered.
+  const readinessFailures = getCandidatePromotionReadinessFailures(candidate);
+  if (readinessFailures.length > 0) {
+    throw new EvaluationValidationError(
+      `candidate ${candidate.candidateId} 不满足 promotion evidence readiness: ${readinessFailures.join("; ")}`,
     );
   }
   // §4 The approval record's beforeActiveFingerprint must match.

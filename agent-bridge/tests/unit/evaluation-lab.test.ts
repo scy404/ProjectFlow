@@ -25,6 +25,13 @@ import { buildBudgetCheckpoint, runEvaluation } from "../../src/evaluation/lab/r
 import { runReferenceProgram } from "../../src/evaluation/lab/reference-program.js";
 import { buildProvenance, validateEvaluationConfig } from "../../src/evaluation/lab/validation.js";
 import { findEvaluatorBudgetFailure, readEvaluatorBudget } from "../../src/server/routes/start-run-stream.js";
+import { provisionObservationFixture } from "../../src/evaluation/fixture-provisioner.js";
+import { executeFixtureContract } from "../../src/evaluation/fixture-provisioner.js";
+import {
+  FIXTURE_REPLAN_CONFLICT_DUPLICATE,
+  verifyFixturePrecondition,
+} from "../../src/evaluation/lab/fixture-contracts.js";
+import { fetchEvidenceSnapshot } from "../../src/evaluation/lab/evidence-client.js";
 
 const projectRoot = resolve(import.meta.dirname ?? process.cwd(), "../../../");
 const createdRunDirs: string[] = [];
@@ -576,6 +583,62 @@ describe("Evaluation Lab immutable end-to-end loop", () => {
         });
         expect(result.passed, result.hardGrade.failures.join("\n")).toBe(true);
       }
+    } finally {
+      await pair.destroy();
+    }
+  }, 35_000);
+});
+
+describe("Evaluation Lab fixture contract integration", () => {
+  it("provisions fixture, executes fixture contract, fetches evidence, and verifies precondition", async () => {
+    const pair = new IsolatedProcessPair();
+    await pair.start(projectRoot, "mock:mock-model");
+    try {
+      // Step 1: Provision the demo fixture (seed demo state + create conversation).
+      const identity = await provisionObservationFixture({
+        backendBaseUrl: pair.backendUrl,
+        workspaceId: "demo-workspace-001",
+        projectId: "demo-project-001",
+        viewerUserId: "demo-user-001",
+        adminToken: pair.adminToken,
+        evaluationNonce: pair.nonce,
+        evaluationInstanceId: pair.instanceId,
+      });
+      expect(identity.conversationId).toBeTruthy();
+      expect(identity.workspaceId).toBe("demo-workspace-001");
+
+      // Step 2: Execute the fixture contract (pre-seed a pending replan).
+      await executeFixtureContract(
+        {
+          backendBaseUrl: pair.backendUrl,
+          internalServiceToken: pair.internalServiceToken,
+          evaluationNonce: pair.nonce,
+          evaluationInstanceId: pair.instanceId,
+        },
+        FIXTURE_REPLAN_CONFLICT_DUPLICATE,
+      );
+
+      // Step 3: Fetch authenticated evidence snapshot from the backend.
+      const evidenceConfig = {
+        backendBaseUrl: pair.backendUrl,
+        internalServiceToken: pair.internalServiceToken,
+        evaluationNonce: pair.nonce,
+        evaluationInstanceId: pair.instanceId,
+      };
+      const snapshot = await fetchEvidenceSnapshot(evidenceConfig, {
+        workspaceId: FIXTURE_REPLAN_CONFLICT_DUPLICATE.precondition.evidenceQuery.workspaceId,
+        viewerUserId: FIXTURE_REPLAN_CONFLICT_DUPLICATE.precondition.evidenceQuery.viewerUserId,
+        projectId: FIXTURE_REPLAN_CONFLICT_DUPLICATE.precondition.evidenceQuery.projectId,
+      });
+      expect(snapshot.schema_version).toBe(1);
+      expect(snapshot.proposal_facts.length).toBeGreaterThanOrEqual(1);
+
+      // Step 4: Verify the fixture precondition passes against real evidence.
+      const result = verifyFixturePrecondition(
+        snapshot,
+        FIXTURE_REPLAN_CONFLICT_DUPLICATE.precondition,
+      );
+      expect(result.passed, result.failures.join("; ")).toBe(true);
     } finally {
       await pair.destroy();
     }

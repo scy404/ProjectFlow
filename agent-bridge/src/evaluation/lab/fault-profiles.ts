@@ -128,7 +128,7 @@ const TOOL_SCHEMA_PROFILE: FaultProfile = {
 const TOOL_RESULT_PROFILE: FaultProfile = {
   profileId: "fp-tool-result-001",
   category: "tool_schema_or_result",
-  description: "get_project_state 返回的结果在 runtime loop 中被部分覆盖",
+  description: "get_workspace_state 返回的结果在 runtime loop 中被部分覆盖",
   expectedCause: {
     causeId: "cause-tool-result-001",
     category: "tool_schema_or_result",
@@ -137,7 +137,7 @@ const TOOL_RESULT_PROFILE: FaultProfile = {
   },
   injection: {
     kind: "tool_result_corruption",
-    toolName: "get_project_state",
+    toolName: "get_workspace_state",
     corruption: "tool_use_id 被替换为 null",
   },
   symptom: {

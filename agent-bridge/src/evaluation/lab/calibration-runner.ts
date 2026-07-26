@@ -66,6 +66,7 @@ import {
 import {
   buildCandidateRegistry,
   computeRegistryFingerprint,
+  getCandidatePromotionReadinessFailures,
   loadActiveRegistry,
   assertActiveRegistryUnchanged,
 } from "./standards-registry.js";
@@ -647,6 +648,9 @@ function isEligibleForPromotion(
   // candidate is still ineligible when the Judge failed safe or the
   // frozen acceptance proposal did not pass.
   if (failSafeReason !== null || !acceptancePassed) return false;
+  // §4 The candidate payload itself must carry a usable, evidence-backed
+  // semantic verdict. Stable calibration mechanics alone are insufficient.
+  if (getCandidatePromotionReadinessFailures(candidate).length > 0) return false;
   return true;
 }
 
@@ -685,6 +689,7 @@ function getPromotionFailureReasons(
   if (!acceptancePassed) {
     reasons.push("acceptance proposal 未通过");
   }
+  reasons.push(...getCandidatePromotionReadinessFailures(candidate));
   return reasons;
 }
 

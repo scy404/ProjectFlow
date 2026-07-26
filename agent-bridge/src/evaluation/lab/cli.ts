@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 import { existsSync, writeSync } from "node:fs";
-import { readFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { EvaluationArtifactStore } from "./artifact-store.js";
 import { EVALUATION_SCHEMA_VERSION } from "./contract.js";
@@ -65,6 +64,32 @@ import type {
   CalibrationCostLedger,
 } from "./calibration-contract.js";
 import type { CostLedgerEntry } from "./contract.js";
+// T46-7 (Issue #100) — showcase, viewer, preview, retention, agent acceptance.
+import { verifyAndMigrateArtifact } from "./schema-migration.js";
+import {
+  buildShowcaseBundle,
+  verifyShowcaseBundle,
+  showcaseRetentionDir,
+} from "./showcase-bundle.js";
+import { startLocalViewer } from "./local-viewer.js";
+import {
+  runLivePreview,
+} from "./live-preview.js";
+import {
+  buildRetentionReport,
+  publishRetentionReport,
+} from "./retention-planner.js";
+import {
+  runAgentAcceptance,
+  publishAgentAcceptanceReport,
+  runKnownFaultChain,
+} from "./agent-acceptance.js";
+import {
+  readExtensionIntegrityIndex,
+  getExtensionEntriesByType,
+  readVerifiedExtensionFile,
+  buildExtensionIntegrityIndex,
+} from "./extension-integrity.js";
 
 const EXIT = {
   passed: 0,
@@ -162,6 +187,12 @@ function usage(): void {
       "conflict-catalog": "scripts/eval-lab conflict-catalog [--json]",
       // T46-6 (Issue #99) — Golden Core freeze, verify, coverage, list.
       "golden-core": "scripts/eval-lab golden-core <freeze|verify|coverage|list|candidates> [--json]",
+      // T46-7 (Issue #100) — showcase, viewer, preview, retention, agent acceptance.
+      "showcase": "scripts/eval-lab showcase <export|verify> <run-id|bundle-path> [--json]",
+      "viewer": "scripts/eval-lab viewer start <run-id> [--port <port>] [--json]",
+      "preview": "scripts/eval-lab preview [--model mock:mock-model|deepseek:deepseek-v4-flash] [--json]",
+      "retention": "scripts/eval-lab retention [--publish] [--json]",
+      "agent-acceptance": "scripts/eval-lab agent-acceptance --profile <codex|claude-code|trae-equivalent|all> [--known-fault] [--publish] [--json]",
     },
     exitCodes: EXIT,
   });
@@ -505,6 +536,18 @@ async function main(): Promise<void> {
       return;
     }
     const result = await runDiagnosisPipeline(store, { runId, targets });
+    // Issue #100 batch A: register all newly published extension files
+    // in the append-only revision chain. If registration fails (e.g.,
+    // chain corruption, hash mismatch, path containment violation),
+    // the entire diagnosis is NOT reported as success.
+    if (result.published && (result.published.diagnoses.length > 0 || result.published.clusters.length > 0 || result.published.packets.length > 0)) {
+      const artifactForExt = await store.readVerifiedArtifact();
+      await buildExtensionIntegrityIndex({
+        runId,
+        runDir: store.runDir,
+        sourceIntegrityRootSha256: artifactForExt.integrityRootSha256 ?? "",
+      });
+    }
     if (jsonFlag) {
       output({
         event: "diagnosis_completed",
@@ -537,8 +580,25 @@ async function main(): Promise<void> {
     const packetIdFlag = parseOptionalValue(args, "--packet-id");
     const store = await verifiedStore(projectRoot, runId);
     if (packetIdFlag) {
-      // Read a single packet and generate its prompt.
-      const packet = await store.readRepairPacket(packetIdFlag) as import("./diagnosis-contract.js").RepairPacket;
+      // Issue #100 fix #7: verify the packet ID exists in the extension
+      // integrity index AND re-verify its content hash before reading.
+      // Cannot read arbitrary files — must be indexed.
+      const artifactForPacket = await store.readVerifiedArtifact();
+      const extIndexForPacket = await readExtensionIntegrityIndex(
+        store.runDir,
+        artifactForPacket.integrityRootSha256 ?? "",
+        runId,
+      );
+      if (!extIndexForPacket) {
+        throw new EvaluationValidationError(
+          `run ${runId} 没有 extension integrity index; 请先运行 diagnose 命令生成 repair packet`,
+        );
+      }
+      const packetRelativePath = `repair-packets/${packetIdFlag}.json`;
+      const { content: packetJson } = await readVerifiedExtensionFile(
+        extIndexForPacket, store.runDir, packetRelativePath,
+      );
+      const packet = JSON.parse(packetJson) as import("./diagnosis-contract.js").RepairPacket;
       // Verify packet invariants.
       const violations = verifyPacketInvariants(packet);
       if (violations.length > 0) {
@@ -565,14 +625,31 @@ async function main(): Promise<void> {
       process.exit(packet.staleState === "stale" ? EXIT.regression : EXIT.passed);
       return;
     }
-    // List all packets for the run.
+    // Issue #100 fix #7: list repair packets from the VERIFIED
+    // extension integrity index, NOT from a broken untyped cast on
+    // the artifact. Raw file reads without index verification are
+    // forbidden. When the extension integrity index does not exist
+    // (no diagnosis has been run yet), return empty — this is
+    // honest, not a false negative.
     const artifact = await store.readVerifiedArtifact();
-    const packetIds = (artifact as unknown as { repairPacketSummaries?: Array<{ packetId: string }> }).repairPacketSummaries?.map((p) => p.packetId) ?? [];
+    const extIndex = await readExtensionIntegrityIndex(
+      store.runDir,
+      artifact.integrityRootSha256 ?? "",
+      runId,
+    );
+    const packetEntries = getExtensionEntriesByType(extIndex, "repair_packet");
+    const packetIds = packetEntries.map((e) => {
+      // Extract packet ID from relative path: "repair-packets/<id>.json"
+      const base = basename(e.relativePath, ".json");
+      return base;
+    });
     if (packetIds.length === 0) {
       output({
         event: "repair_packets_empty",
         runId,
-        reason: "尚未生成 repair packet；请先运行 diagnose 命令",
+        reason: extIndex
+          ? "extension integrity index 中无 repair_packet 条目; 已诊断但未生成 packet"
+          : "尚未生成 extension integrity index; 请先运行 diagnose 命令",
       });
       process.exit(EXIT.passed);
       return;
@@ -824,6 +901,19 @@ async function main(): Promise<void> {
         `calibration artifact 不变式违反: ${violations.join("; ")}`,
       );
     }
+    // Issue #100 batch A: register all newly published extension files
+    // (calibration-artifact.json, candidate-registry.json) in the
+    // append-only revision chain. Registration failure → not success.
+    // Anchor extensions to the immutable source run graph, not to the
+    // calibration artifact's own integrity hash. Consumers first verify the
+    // base result graph and then verify every extension revision against that
+    // same source root.
+    const artifactForExt = await store.readVerifiedArtifact();
+    await buildExtensionIntegrityIndex({
+      runId,
+      runDir: store.runDir,
+      sourceIntegrityRootSha256: artifactForExt.integrityRootSha256 ?? "",
+    });
     if (jsonFlag) {
       output({
         event: "calibration_completed",
@@ -864,21 +954,24 @@ async function main(): Promise<void> {
     const runId = args[0]!;
     const jsonFlag = parsedArgsHasFlag(args, "--json");
     const store = await verifiedStore(projectRoot, runId);
-    // Read the calibration artifact's standard conflicts.
-    const calibrationPath = store.runDir + "/calibration-artifact.json";
-    let conflicts: unknown[];
-    try {
-      const content = await readFile(calibrationPath, "utf-8");
-      const artifact = JSON.parse(content) as { standardConflicts?: unknown[] };
-      conflicts = artifact.standardConflicts ?? [];
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-        throw new EvaluationValidationError(
-          `run ${runId} 没有 calibration-artifact.json; 请先运行 calibrate 命令`,
-        );
-      }
-      throw error;
+    const sourceArtifact = await store.readVerifiedArtifact();
+    const extensionIndex = await readExtensionIntegrityIndex(
+      store.runDir,
+      sourceArtifact.integrityRootSha256 ?? "",
+      runId,
+    );
+    if (!extensionIndex) {
+      throw new EvaluationValidationError(
+        `run ${runId} 没有 calibration-artifact.json; 请先运行 calibrate 命令`,
+      );
     }
+    const { content } = await readVerifiedExtensionFile(
+      extensionIndex,
+      store.runDir,
+      "calibration-artifact.json",
+    );
+    const calibrationArtifact = JSON.parse(content) as { standardConflicts?: unknown[] };
+    const conflicts = calibrationArtifact.standardConflicts ?? [];
     if (jsonFlag) {
       output({
         event: "standard_conflicts_list",
@@ -1005,19 +1098,23 @@ async function main(): Promise<void> {
     const runId = args[0]!;
     const jsonFlag = parsedArgsHasFlag(args, "--json");
     const store = await verifiedStore(projectRoot, runId);
-    const candidatePath = store.runDir + "/candidate-registry.json";
-    let registry: unknown;
-    try {
-      const content = await readFile(candidatePath, "utf-8");
-      registry = JSON.parse(content);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-        throw new EvaluationValidationError(
-          `run ${runId} 没有 candidate-registry.json; 请先运行 calibrate 命令`,
-        );
-      }
-      throw error;
+    const sourceArtifact = await store.readVerifiedArtifact();
+    const extensionIndex = await readExtensionIntegrityIndex(
+      store.runDir,
+      sourceArtifact.integrityRootSha256 ?? "",
+      runId,
+    );
+    if (!extensionIndex) {
+      throw new EvaluationValidationError(
+        `run ${runId} 没有 candidate-registry.json; 请先运行 calibrate 命令`,
+      );
     }
+    const { content } = await readVerifiedExtensionFile(
+      extensionIndex,
+      store.runDir,
+      "candidate-registry.json",
+    );
+    const registry = JSON.parse(content) as unknown;
     if (jsonFlag) {
       output({
         event: "candidate_registry",
@@ -1247,6 +1344,332 @@ async function main(): Promise<void> {
     throw new EvaluationValidationError(
       `golden-core 未知子命令: ${subcommand}; 支持: freeze | verify | coverage | list | candidates`,
     );
+  }
+
+  // -------------------------------------------------------------------------
+  // T46-7 (Issue #100) — showcase, viewer, preview, retention, agent-acceptance.
+  // -------------------------------------------------------------------------
+
+  if (command === "showcase") {
+    const subcommand = args[0];
+    if (subcommand === "export") {
+      const runId = args[1];
+      if (!runId) {
+        throw new EvaluationValidationError("showcase export 需要 <run-id>");
+      }
+      const json = parsedArgsHasFlag(args, "--json");
+      const store = await verifiedStore(projectRoot, runId);
+      const verified = await verifyAndMigrateArtifact(store.runDir, runId);
+      const { bundle, bundlePath, bundleSha256 } = await buildShowcaseBundle({
+        verified,
+        projectRoot,
+      });
+      if (json) {
+        // Issue #100 fix #6: exitCode in JSON MUST match process.exitCode.
+        // showcase export exits: 0=completed, 1=regression, 4=partial_budget.
+        const sourceExitCode = verified.artifact.status === "partial_budget"
+          ? EXIT.partialBudget
+          : verified.artifact.status === "regression" ? EXIT.regression : EXIT.passed;
+        output({
+          event: "showcase_exported",
+          bundleId: bundle.bundleId,
+          bundlePath,
+          bundleSha256,
+          integritySha256: bundle.integritySha256,
+          releaseVerdict: bundle.releaseVerdict.verdict,
+          honestBaseline: bundle.releaseVerdict.honestBaseline,
+          exitCode: sourceExitCode,
+        });
+      } else {
+        process.stdout.write(
+          `Showcase Bundle: ${bundle.bundleId}\n` +
+          `  path: ${bundlePath}\n` +
+          `  verdict: ${bundle.releaseVerdict.verdict}\n` +
+          `  baseline: ${bundle.releaseVerdict.honestBaseline}\n` +
+          `  integrity: ${bundle.integritySha256}\n`,
+        );
+      }
+      // Issue #100 fix #6: exit code MUST match artifact status.
+      // completed=0, regression=1, partial_budget=4.
+      process.exit(
+        verified.artifact.status === "partial_budget" ? EXIT.partialBudget
+          : verified.artifact.status === "regression" ? EXIT.regression
+          : EXIT.passed,
+      );
+      return;
+    }
+    if (subcommand === "verify") {
+      const bundlePath = args[1];
+      if (!bundlePath) {
+        throw new EvaluationValidationError("showcase verify 需要 <bundle-path>");
+      }
+      const json = parsedArgsHasFlag(args, "--json");
+      const bundle = await verifyShowcaseBundle(bundlePath);
+      if (json) {
+        output({
+          event: "showcase_verified",
+          bundleId: bundle.bundleId,
+          integritySha256: bundle.integritySha256,
+          verdict: bundle.releaseVerdict.verdict,
+          exitCode: EXIT.passed,
+        });
+      } else {
+        process.stdout.write(
+          `Showcase Bundle Verified: ${bundle.bundleId}\n` +
+          `  verdict: ${bundle.releaseVerdict.verdict}\n` +
+          `  baseline: ${bundle.releaseVerdict.honestBaseline}\n` +
+          `  integrity: ${bundle.integritySha256}\n`,
+        );
+      }
+      process.exit(EXIT.passed);
+      return;
+    }
+    throw new EvaluationValidationError(
+      `showcase 未知子命令: ${subcommand}; 支持: export | verify`,
+    );
+  }
+
+  if (command === "viewer") {
+    const subcommand = args[0];
+    if (subcommand === "start") {
+      const runId = args[1];
+      if (!runId) {
+        throw new EvaluationValidationError("viewer start 需要 <run-id>");
+      }
+      const json = parsedArgsHasFlag(args, "--json");
+      let port = 0;
+      const portIdx = args.indexOf("--port");
+      if (portIdx >= 0 && args[portIdx + 1]) {
+        port = parseInt(args[portIdx + 1]!, 10);
+        if (!Number.isFinite(port) || port < 0 || port > 65535) {
+          throw new EvaluationValidationError(`--port 非法: ${args[portIdx + 1]}`);
+        }
+      }
+      const store = await verifiedStore(projectRoot, runId);
+      const verified = await verifyAndMigrateArtifact(store.runDir, runId);
+      const handle = await startLocalViewer({
+        verified,
+        projectRoot,
+        port,
+      });
+      if (json) {
+        output({
+          event: "viewer_started",
+          runId,
+          host: handle.host,
+          port: handle.port,
+          url: handle.url,
+          readOnly: true,
+          loopbackOnly: true,
+          exitCode: EXIT.passed,
+        });
+      } else {
+        process.stdout.write(
+          `Local Viewer Started (loopback-only, read-only)\n` +
+          `  url: ${handle.url}\n` +
+          `  host: ${handle.host}\n` +
+          `  port: ${handle.port}\n` +
+          `  Press Ctrl+C to stop.\n`,
+        );
+      }
+      // Keep the process alive until Ctrl+C.
+      process.on("SIGINT", () => {
+        handle.close().finally(() => process.exit(EXIT.passed));
+      });
+      // Keep the event loop alive.
+      await new Promise<void>(() => { /* blocks until SIGINT */ });
+      return;
+    }
+    throw new EvaluationValidationError(
+      `viewer 未知子命令: ${subcommand}; 支持: start`,
+    );
+  }
+
+  if (command === "preview") {
+    const json = parsedArgsHasFlag(args, "--json");
+    const modelIdx = args.indexOf("--model");
+    const model = modelIdx >= 0 && args[modelIdx + 1] ? args[modelIdx + 1]! : "mock:mock-model";
+    const result = await runLivePreview({
+      projectRoot,
+      model,
+    });
+    if (json) {
+      output({
+        event: "preview_completed",
+        runId: result.runId,
+        runDir: result.runDir,
+        status: result.status,
+        labelPath: result.labelPath,
+        integrityRootSha256: result.integrityRootSha256,
+        durationMs: result.durationMs,
+        targetWindowMs: result.targetWindowMs,
+        actualDurationMs: result.durationMs,
+        windowMet: result.windowMet,
+        sutCost: result.sutCost,
+        evaluatorModelCost: result.evaluatorModelCost,
+        codingAgentCost: result.codingAgentCost,
+        modelIsMock: result.modelIsMock,
+        remainingGates: result.remainingGates,
+        preview: true,
+        // C1 fields
+        resolvedModel: result.resolvedModel,
+        worstCase: result.worstCase
+          ? {
+              totalCost: result.worstCase.totalCost,
+              withinCap: result.worstCase.withinCap,
+              cap: result.worstCase.cap,
+            }
+          : null,
+        paidTelemetryVerified: result.paidTelemetryVerified,
+        // Issue #100 fix #6: exitCode in JSON MUST match process.exitCode.
+        exitCode: result.status === "regression" ? EXIT.regression
+          : result.status === "partial_budget" ? EXIT.partialBudget
+          : EXIT.passed,
+      });
+    } else {
+      // Issue #100 §3.2 honesty invariant: unknown cost MUST NOT be
+      // displayed as $0. The JSON output above already preserves the
+      // full `sutCost` object (including `amountUsd: null`); this
+      // text-mode display must match that truthfulness.
+      const sutCostDisplay = result.sutCost.amountUsd === null
+        ? "unknown"
+        : `$${result.sutCost.amountUsd}`;
+      process.stdout.write(
+        `Live Preview Completed\n` +
+        `  runId: ${result.runId}\n` +
+        `  runDir: ${result.runDir}\n` +
+        `  status: ${result.status}\n` +
+        `  model: ${model} (mock=${result.modelIsMock})\n` +
+        `  duration: ${result.durationMs}ms (target window: ${result.targetWindowMs[0] / 1000}-${result.targetWindowMs[1] / 1000}s, met: ${result.windowMet})\n` +
+        `  sutCost: ${sutCostDisplay}\n` +
+        `  paidTelemetryVerified: ${result.paidTelemetryVerified}\n` +
+        (result.worstCase ? `  worstCase: $${result.worstCase.totalCost.toFixed(5)} (cap $${result.worstCase.cap.toFixed(2)})\n` : "") +
+        `  remainingGates: ${result.remainingGates.length > 0 ? result.remainingGates.join(", ") : "none"}\n`,
+      );
+    }
+    // Issue #100 fix #6: exit code MUST match artifact status.
+    process.exit(
+      result.status === "regression" ? EXIT.regression
+        : result.status === "partial_budget" ? EXIT.partialBudget
+        : EXIT.passed,
+    );
+    return;
+  }
+
+  if (command === "retention") {
+    const json = parsedArgsHasFlag(args, "--json");
+    const publish = parsedArgsHasFlag(args, "--publish");
+    const report = await buildRetentionReport({ projectRoot });
+    let reportPath: string | null = null;
+    if (publish) {
+      reportPath = join(showcaseRetentionDir(projectRoot), `retention_${report.generatedAt.replace(/[^0-9]/g, "").slice(0, 14)}.json`);
+      await publishRetentionReport(report, reportPath);
+    }
+    if (json) {
+      output({
+        event: "retention_report_built",
+        report,
+        reportPath,
+        exitCode: EXIT.passed,
+      });
+    } else {
+      process.stdout.write(
+        `Retention Report\n` +
+        `  generatedAt: ${report.generatedAt}\n` +
+        `  runs: ${report.runCount} (preserved=${report.preservedRunCount}, eligible=${report.eligibleRunCount})\n` +
+        `  bundles: ${report.bundleCount}\n` +
+        `  totalRunSize: ${(report.totalRunSizeBytes / 1024 / 1024).toFixed(2)} MB\n` +
+        `  totalBundleSize: ${(report.totalBundleSizeBytes / 1024).toFixed(2)} KB\n` +
+        `  autoDeletionPerformed: ${report.autoDeletionPerformed}\n` +
+        (reportPath ? `  reportPath: ${reportPath}\n` : ""),
+      );
+    }
+    process.exit(EXIT.passed);
+    return;
+  }
+
+  if (command === "agent-acceptance") {
+    // ── T46-7 §18.5 (Issue #100 batch 2) — Known-fault chain ──────────
+    const knownFault = parsedArgsHasFlag(args, "--known-fault");
+    if (knownFault) {
+      const json = parsedArgsHasFlag(args, "--json");
+      const result = await runKnownFaultChain({ projectRoot });
+      if (json) {
+        output({
+          event: "known_fault_chain_completed",
+          chainType: result.chainType,
+          shellContractPassed: result.shellContractPassed,
+          realAgentEvidence: result.realAgentEvidence,
+          steps: result.steps,
+          startedAt: result.startedAt,
+          completedAt: result.completedAt,
+          durationMs: result.durationMs,
+          integritySha256: result.integritySha256,
+          exitCode: result.shellContractPassed ? EXIT.passed : EXIT.regression,
+        });
+      } else {
+        process.stdout.write(
+          `Known-Fault Diagnose-Repair Chain (no real LLM agent invoked)\n` +
+          `  chainType: ${result.chainType}\n` +
+          `  shellContractPassed: ${result.shellContractPassed}\n` +
+          `  steps: ${result.steps.length}\n` +
+          `  duration: ${result.durationMs}ms\n` +
+          `  integrity: ${result.integritySha256}\n`,
+        );
+        for (const step of result.steps) {
+          process.stdout.write(
+            `  - ${step.step}: ${step.passed ? "PASS" : "FAIL"}${step.failureReason ? ` (${step.failureReason})` : ""}\n`,
+          );
+        }
+      }
+      process.exit(result.shellContractPassed ? EXIT.passed : EXIT.regression);
+      return;
+    }
+
+    const profileIdx = args.indexOf("--profile");
+    const profile = profileIdx >= 0 && args[profileIdx + 1] ? args[profileIdx + 1]! : "all";
+    if (!["codex", "claude-code", "trae-equivalent", "all"].includes(profile)) {
+      throw new EvaluationValidationError(`--profile 非法: ${profile}; 支持: codex | claude-code | trae-equivalent | all`);
+    }
+    const json = parsedArgsHasFlag(args, "--json");
+    const publish = parsedArgsHasFlag(args, "--publish");
+    const results = await runAgentAcceptance({
+      projectRoot,
+      profile: profile as "codex" | "claude-code" | "trae-equivalent" | "all",
+    });
+    let reportPath: string | null = null;
+    if (publish) {
+      const timestamp = results[0]?.startedAt.replace(/[^0-9]/g, "").slice(0, 14) ?? Date.now().toString();
+      reportPath = join(showcaseRetentionDir(projectRoot), `agent_acceptance_${timestamp}.json`);
+      await publishAgentAcceptanceReport(results, reportPath);
+    }
+    const shellContractAllPassed = results.every((r) => r.shellContractPassed);
+    if (json) {
+      output({
+        event: "shell_contract_acceptance_completed",
+        results,
+        reportPath,
+        shellContractAllPassed,
+        realAgentEvidence: false,
+        note: "此验收仅验证 shell CLI contract，未调用真实 LLM agent。shellContractPassed 表示 CLI 命令映射正确；realAgentEvidence 始终为 false。",
+        exitCode: shellContractAllPassed ? EXIT.passed : EXIT.regression,
+      });
+    } else {
+      process.stdout.write(
+        `Shell Contract Acceptance (no real LLM agent invoked)\n` +
+        `  profiles: ${results.length}\n` +
+        `  shellContractAllPassed: ${shellContractAllPassed}\n` +
+        (reportPath ? `  reportPath: ${reportPath}\n` : ""),
+      );
+      for (const r of results) {
+        const passCount = r.steps.filter((s) => s.passed).length;
+        process.stdout.write(
+          `  - ${r.displayName}: ${passCount}/${r.steps.length} steps passed (shellContractPassed=${r.shellContractPassed})\n`,
+        );
+      }
+    }
+    process.exit(shellContractAllPassed ? EXIT.passed : EXIT.regression);
+    return;
   }
 
   if (command !== "run") {

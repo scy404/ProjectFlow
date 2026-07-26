@@ -48,7 +48,14 @@ agent-bridge/artifacts/
 # T46-6 (Issue #99) — Golden Core frozen JSON snapshot is a runtime
 # audit artifact produced by `golden-core freeze`. Not committed; the
 # TS registry (golden-core-registry.ts) is the single source of truth.
-agent-bridge/golden-core/
+agent-bridge/golden-core/*
+!agent-bridge/golden-core/registry.json
+# T46-7 (Issue #100) — Showcase bundles, bundle-source sidecars,
+# retention reports, and agent-acceptance reports are runtime
+# artifacts. A portable bundle is "committable" by design — use
+# `git add -f agent-bridge/showcase/bundles/<bundleId>.json` to
+# commit a specific redacted bundle when promoting a showcase.
+agent-bridge/showcase/
 backend/ab_sidecar_pilot_*.md
 vendor_imports/tools/
 vendor_imports/research/**/repos/

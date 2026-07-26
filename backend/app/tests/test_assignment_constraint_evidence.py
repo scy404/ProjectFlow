@@ -7,7 +7,19 @@ Covers:
 - Unconstrained members remain compatible (no false positives)
 """
 
+from datetime import date, timedelta
+
 from fastapi.testclient import TestClient
+
+# Relative future dates to prevent test date drift.
+# Base = today + 30 days; each offset preserves original relative relationships.
+_T = date.today() + timedelta(days=30)
+D0 = (_T + timedelta(days=0)).isoformat()
+D4 = (_T + timedelta(days=4)).isoformat()
+D9 = (_T + timedelta(days=9)).isoformat()
+D11 = (_T + timedelta(days=11)).isoformat()
+D14 = (_T + timedelta(days=14)).isoformat()
+D19 = (_T + timedelta(days=19)).isoformat()
 
 
 def _create_evidence_fixture(client: TestClient):
@@ -59,7 +71,7 @@ def _create_evidence_fixture(client: TestClient):
             "workspace_id": workspace["id"],
             "name": "Evidence Project",
             "idea": "Test constraint evidence",
-            "deadline": "2026-07-20",
+            "deadline": D19,
             "deliverables": "Working evidence gate",
             "created_by": owner["id"],
         },
@@ -71,8 +83,8 @@ def _create_evidence_fixture(client: TestClient):
             "project_id": project["id"],
             "name": "Execution",
             "goal": "Test evidence",
-            "start_date": "2026-07-01",
-            "end_date": "2026-07-15",
+            "start_date": D0,
+            "end_date": D14,
             "deliverable": "Evidence tests pass",
         },
     ).json()
@@ -85,7 +97,7 @@ def _create_evidence_fixture(client: TestClient):
             "title": "Frontend task",
             "description": "Build UI components",
             "priority": "P0",
-            "due_date": "2026-07-10",
+            "due_date": D9,
             "estimated_hours": 8,
         },
     ).json()
@@ -98,7 +110,7 @@ def _create_evidence_fixture(client: TestClient):
             "title": "Backend task",
             "description": "Build API",
             "priority": "P1",
-            "due_date": "2026-07-12",
+            "due_date": D11,
             "estimated_hours": 6,
         },
     ).json()
@@ -297,7 +309,7 @@ def test_no_member_profile_means_no_constraint_gate(client: TestClient):
             "workspace_id": workspace["id"],
             "name": "No Profile Project",
             "idea": "Test no profile",
-            "deadline": "2026-07-20",
+            "deadline": D19,
             "deliverables": "Test",
             "created_by": owner["id"],
         },
@@ -308,8 +320,8 @@ def test_no_member_profile_means_no_constraint_gate(client: TestClient):
             "project_id": project["id"],
             "name": "S1",
             "goal": "Test",
-            "start_date": "2026-07-01",
-            "end_date": "2026-07-15",
+            "start_date": D0,
+            "end_date": D14,
             "deliverable": "Test",
         },
     ).json()
@@ -321,7 +333,7 @@ def test_no_member_profile_means_no_constraint_gate(client: TestClient):
             "title": "Task",
             "description": "Desc",
             "priority": "P0",
-            "due_date": "2026-07-10",
+            "due_date": D9,
             "estimated_hours": 4,
         },
     ).json()

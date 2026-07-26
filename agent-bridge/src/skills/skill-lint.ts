@@ -170,17 +170,23 @@ function lintV2Metadata(skill: SkillMetadataV2, issues: LintIssue[]): void {
     });
   }
 
-  // Check that proposal tools aren't combined with "none" effect ceiling
+  // Check that effectful tools aren't combined with "none" effect ceiling.
+  // Read-only tools such as list_pending_proposals are intentionally excluded.
   if (v2.allowedEffects === "none") {
-    const hasProposalTool = skill.allowedTools.some(
-      (t) => t.includes("proposal") || t.includes("recommendation"),
+    const hasEffectfulTool = skill.allowedTools.some(
+      (tool) =>
+        /^generate_.+_proposal$/.test(tool)
+        || /^create_.+_proposal$/.test(tool)
+        || tool === "recommend_assignment"
+        || tool === "create_risk"
+        || tool === "create_checkin",
     );
-    if (hasProposalTool) {
+    if (hasEffectfulTool) {
       issues.push({
         skill: skill.name,
         level: "error",
         category: "effect_mismatch",
-        message: "Skill has proposal tools but effect ceiling is 'none'",
+        message: "Skill has effectful tools but effect ceiling is 'none'",
       });
     }
   }

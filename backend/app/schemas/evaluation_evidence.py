@@ -95,6 +95,7 @@ class EventFacts(BaseModel):
 class MemoryFacts(BaseModel):
     memory_id: str
     memory_type: str
+    source_type: str | None = None
     scope: str
     status: str
     visibility: str

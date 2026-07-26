@@ -178,6 +178,26 @@ function buildSampleEntry(id: string, version: number, registry: "active" | "can
   };
 }
 
+function buildPromotionReadyEntry(id: string, version: number): StandardEntry {
+  const entry = buildSampleEntry(id, version, "candidate");
+  return {
+    ...entry,
+    payload: {
+      ...entry.payload,
+      evidenceReferences: [
+        {
+          reference: `calibrations/run-1/${id}-evidence.json`,
+          referenceSha256: "a".repeat(64),
+        },
+      ],
+      verdict: "pass",
+      score: "excellent",
+      reason: "冻结校准证据通过。",
+      confidence: 0.95,
+    },
+  } as StandardEntry;
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -502,7 +522,7 @@ describe("T46-5 governance — applyPromotionApproval is the ONLY active mutatio
     const active = buildEmptyActiveRegistry();
     const candidate: CandidateStandard = {
       candidateId: "candidate-1",
-      entry: buildSampleEntry("rubric-1", 1, "candidate"),
+      entry: buildPromotionReadyEntry("rubric-1", 1),
       status: "approved",
       producedByRunId: "run-1",
       affectedByConflicts: [],
@@ -561,7 +581,7 @@ describe("T46-5 governance — applyPromotionApproval is the ONLY active mutatio
 
     const candidate: CandidateStandard = {
       candidateId: "candidate-1",
-      entry: buildSampleEntry("rubric-1", 2, "candidate"),
+      entry: buildPromotionReadyEntry("rubric-1", 2),
       status: "approved",
       producedByRunId: "run-1",
       affectedByConflicts: [],

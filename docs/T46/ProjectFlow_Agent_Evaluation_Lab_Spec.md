@@ -253,10 +253,15 @@ Issue #93 defines architecture and acceptance direction. Before implementation i
 - Add semantic anchors, criterion-scoped Judges, bias/disagreement measurement, standard conflicts, candidate standard diffs and governed promotion.
 - Exit gate: anchor ordering and repeated stability meet a frozen, reviewable acceptance proposal; unavailable or conflicting Judges degrade to `needs_review`; no normal run can modify active standards.
 
-### Slice 4 — Showcase and Mature Coverage
+### Slice 4 — Golden Core Expansion & Freeze
 
-- Add the portable redacted showcase bundle, loopback-only local viewer, atomic live preview and expand the Golden Core toward the 50–64 maturity target.
-- Exit gate: both presentation surfaces match the immutable result graph, accepted and live evidence cannot be confused, committed output passes redaction/provenance checks and the two-to-five-minute demo completes within the smoke SUT ceiling.
+- Expand the existing evaluation scenario suite into the frozen ProjectFlow Golden Core: 52 canonical scenarios covering 8 capability domains × 8 scenario classes. Deliver a single, versioned, auditable Golden Core registry (TS source as fact source, JSON snapshot as frozen audit artifact). Each stateful scenario declares 9 trusted entry conditions. The P0 non-removable set covers safety/authority, privacy, Proposal-Confirm, idempotency, forbidden effects, terminal consistency, read-only purity and hidden leakage. 6 robustness variant kinds exist without inflating the canonical count. Generated regression candidates require 8 verification checks and cannot auto-promote.
+- Exit gate: the `golden-core` preset runs within the same SUT cap as `full`; the registry fingerprint is deterministic; registry integrity invariants pass; the coverage report covers all 8×8 cells.
+
+### Slice 5 — Evidence-Backed Showcase & Closeout
+
+- Add two read-only presentation surfaces consuming the same immutable result graph: a portable committed redacted showcase bundle and a loopback-only local HTTP viewer. Add atomic live preview with bounded SUT ceiling and honesty reporting (real `durationMs`, no sleep inflation). Add schema/hash/provenance verification with deterministic migration (no-op for V1) and unknown-schema fail-closed. Add zero-deletion V1 retention planning with 11 preserve-reason categories. Add Agent-first shell contract acceptance for 3 profiles (codex/claude-code/trae-equivalent), each mapping 7 deterministic CLI commands. Add extension integrity index for auxiliary artifacts (diagnoses, clusters, repair packets) produced after the run. All 12 cross-slice fixes applied: privacy, path containment, extension index verification, capability matrix registry join, error message consistency, exit code contract, and security test coverage.
+- Exit gate: both presentation surfaces produce the same verdict, counts and costs for the same artifact; accepted baseline and live preview cannot be confused; committed output passes redaction/provenance checks; the two-to-five-minute demo completes within the smoke SUT ceiling; agent-acceptance 21/21 CLI commands pass; Robert-approved S1–S6 repairs preserve the frozen trust boundaries and the final Golden Core mock run passes 52/52 without weakening graders.
 
 No later slice is required to make an earlier slice honest. Dashboard work cannot precede trustworthy artifacts; semantic calibration cannot become a hard gate before hard-domain oracles; RCA automation cannot emit `fix` packets before known-fault validation.
 

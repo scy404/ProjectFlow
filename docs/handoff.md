@@ -4,6 +4,54 @@ Status: current as of 2026-07-20.
 
 ## Latest Architecture Handoff
 
+### 2026-07-20 — T46 Issue #100 Slice 5 Evidence-Backed Showcase & Closeout
+
+GitHub Issue #100 is implemented on `glm/t46-100-showcase-closeout` (local commit `feat(evaluation): ship evidence-backed showcase and T46 closeout`, not pushed/merged/closed). It is the Slice 5 evidence-backed showcase and T46 closeout surface: two read-only presentation surfaces consume the same immutable result graph — a portable committed redacted showcase bundle (`showcase export`) and a loopback-only local read viewer (`viewer start`). `preview` runs a live smoke-bounded preview with `preview_` runId prefix, `$0.10` SUT ceiling, `preview_label.json` marker, and 4 paid-model fail-closed gates. `retention` produces a zero-deletion V1 planning report with 11 preserve reasons. `agent-acceptance` runs 3 shell agent profiles (codex/claude-code/trae-equivalent) × 7 deterministic CLI steps, simulating agents via `execFileSync` without invoking real LLMs. The honest Golden Core baseline 30/52 is preserved in showcase bundles without weakening graders.
+
+`schema-migration.ts` is the shared foundation: `verifyAndMigrateArtifact` reads `integrity.json`, verifies `sha256(reportRaw) === integrity.reportSha256` **before** parsing `report.json` (prevents tamper-then-rehash), then calls `verifyResultGraph` and `verifyProvenance`. `SUPPORTED_SOURCE_SCHEMA_VERSIONS = [1]`, `PRESENTATION_SCHEMA_VERSION = 1`, `MIGRATIONS` is empty (V1 needs no migration). `assertSupportedSchema` fails-closed on unknown future schemas.
+
+`showcase-bundle.ts` produces the portable bundle: bundle-scoped pseudonyms (`pseudo_<sha8>`, not stable across bundles, each bundle uses independent `generatePseudonymSalt()`), `redactText` replaces raw IDs/paths/secrets/hidden prompts/raw traces with `<redacted:kind>`, `buildEvidenceChains` includes short redacted observation output snippets (≤200 chars), `publishImmutableBundle` uses hard-link atomic publish (EEXIST → fail-closed) then `chmod 0o400`, `toBundleCostBucket` defensively coerces `source: "unknown"` to `amountUsd: null`. A `.source.json` sidecar in `agent-bridge/showcase/bundle-sources/` records the RAW source runId (not part of the portable bundle) so the retention planner can build `referencedRunIds`.
+
+`local-viewer.ts` binds to `LOOPBACK_HOSTS = ["127.0.0.1", "::1"]` only. Routes: `GET /` (HTML), `GET /api/viewer` (JSON bundle), `GET /health`, `GET /artifact`, `GET /bundle`. POST/PUT/DELETE/PATCH → 405; mutation query params → 400. `startLocalViewer` accepts `salt?: Buffer` to ensure viewer ↔ bundle parity (same `integritySha256`). `ViewerHandle.close()` releases the port.
+
+`live-preview.ts` uses `LIVE_PREVIEW_SUT_CEILING_USD = 0.10`, `LIVE_PREVIEW_RUN_ID_PREFIX = "preview_"`, `LIVE_PREVIEW_LABEL_FILE = "preview_label.json"`. `verifyPreviewModelGate` checks 4 gates (`frozen_pricing_table`, `pre_call_worst_case_cost`, `provider_api_key_present`, `sut_cost_under_ceiling`); paid models stay fail-closed. `runLivePreview` records honest `durationMs` (no sleep, no fake latency) and passes `skipToolchainValidation: true` to `runEvaluation` (preview is operator-facing, doesn't need toolchain consistency).
+
+`retention-planner.ts` scans all artifact runs and showcase bundles, marks 11 preserve reasons (`status_failed`, `status_needs_review`, `status_partial_budget`, `contains_repair_packet`, `contains_diagnosis`, `contains_counterfactual`, `contains_calibration_artifact`, `contains_promotion_approval`, `referenced_by_showcase_bundle`, `is_promoted_baseline`, `preview_run`). `RETENTION_POLICY_VERSION = "v1-no-deletion"`: all runs get `eligibleForCleanup` flag but V1 never auto-deletes. `publishRetentionReport` writes to `agent-bridge/showcase/retention/retention-report.json`.
+
+`agent-acceptance.ts` defines `AGENT_PROFILES` (3 profiles × 7 mappings). `runAgentAcceptance` executes each command via `execFileSync("bash", [scriptPath, ...command])`, captures stdout/stderr/exit code, and verifies `expectedJsonFields` exist (supports event-stream multi-line JSON, takes union). `expectsJson = Boolean(mapping.expectedJsonFields && mapping.expectedJsonFields.length > 0)` — harness verifies fields whenever declared, regardless of `--json` flag (because `validate`/`status`/`show`/`verify` output JSON natively). `runId` is extracted from the `run` step's JSON output and substituted into subsequent steps. Harness NEVER invokes real LLM agents — it simulates them by running CLI commands. All runs use `mock:mock-model`.
+
+**Operator/Coding Agent commands:**
+
+```bash
+# Export a portable redacted showcase bundle from a completed run
+scripts/eval-lab showcase export <run-id> --json
+
+# Verify a showcase bundle's integrity and redaction
+scripts/eval-lab showcase verify <bundle-path>
+
+# Start the loopback-only local read viewer
+scripts/eval-lab viewer start <run-id> [--port <port>] --json
+
+# Run a live preview with smoke SUT ceiling ($0.10) and preview_ runId prefix
+scripts/eval-lab preview --model mock:mock-model --json
+
+# Generate a read-only retention planning report (zero-deletion V1)
+scripts/eval-lab retention --json
+scripts/eval-lab retention --publish --json
+
+# Run Agent-first acceptance for 3 shell agent profiles
+scripts/eval-lab agent-acceptance --profile codex --json
+scripts/eval-lab agent-acceptance --profile claude-code --json
+scripts/eval-lab agent-acceptance --profile trae-equivalent --json
+scripts/eval-lab agent-acceptance --profile all --json
+```
+
+**Key files:** `agent-bridge/src/evaluation/lab/schema-migration.ts` (436 lines), `showcase-bundle.ts` (~1230 lines), `local-viewer.ts` (~515 lines), `live-preview.ts` (~425 lines), `retention-planner.ts` (~620 lines), `agent-acceptance.ts` (~570 lines), plus additive extensions to `cli.ts` (5 new command handlers), `validation.ts` (`skipToolchainValidation` option), `runner.ts` (passthrough), `package.json` (5 eval scripts), `scripts/eval-lab` (command allowlist), `.gitignore` (`agent-bridge/showcase/`). Test file: `t46-7-showcase-closeout.test.ts` (101 tests, 18 sections).
+
+**Verification:** Agent Bridge 2346 passed / 10 failed (all 10 pre-existing `t46-3-presets-contract.test.ts` Node version mismatches, unrelated to #100). Typecheck and build pass clean. Real CLI regression: `golden-core verify` (52 scenarios, fingerprint match), `run --preset smoke` (1/1 passed), `showcase export` (atomic publish, `releaseVerdict: "passed"`, `honestBaseline: "1/1"`), `showcase verify` (integrity hash match, redaction complete), `retention` (preserve markers correct: `status_failed`, `preview_run`, `referenced_by_showcase_bundle`; V1 no auto-delete), `preview` (`preview_` runId prefix, `durationMs: 1011` honest, `modelIsMock: true`, `remainingGates: []`, `sutCost.amountUsd: 0` within $0.10 ceiling), `agent-acceptance --profile all` (3 profiles × 7 steps = 21/21 passing, `allPassed: true`, `exitCode: 0`, `jsonFieldsPresent` correctly populated for each step).
+
+**T46 closeout status:** Issue #100 is the last T46 ticket. With its local implementation complete, all 7 T46 slices (Slice 0-5 + Golden Core) are implemented. Issue #100 itself is not closed (local commit, not pushed/merged/closed). Parent Issue #93 is not closed. Golden Core public-seam mock baseline 30/52 failures are preserved as evidence for the final cross-slice adversarial review and repair alignment, not eliminated by weakening graders. Paid models remain fail-closed. Active standard promotion is not in the default path. Cross-slice adversarial review and repair alignment can now begin per Robert's instruction.
+
 ### 2026-07-20 — T46 Issue #99 Slice 4 Golden Core Expansion & Freeze
 
 GitHub Issue #99 was merged into `main` at `a3df83d` and closed on 2026-07-20. It expands the Evaluation Lab from 16 scenarios into a frozen ProjectFlow Golden Core of 52 canonical scenarios covering 8 capability domains (`clarification-direction`, `stage-planning`, `task-breakdown`, `assignment`, `status-read`, `checkin-risk-replan`, `conversations-project-memory`, `runtime-recovery-security`) × 8 scenario classes (`normal`, `negative`, `boundary`, `insufficient-information`, `conflict`, `goal-switching`, `adversarial`, `multi-turn`). The TS registry (`golden-core-registry.ts`) is the single source of truth; the JSON snapshot produced by `golden-core freeze` is a frozen audit artifact. `GOLDEN_CORE_DEFAULT_FROZEN_AT = "2026-07-20T00:00:00.000Z"` keeps the in-memory registry fingerprint deterministic across builds; `computeRegistryFingerprint` includes `candidates`/`rejected`/`freezeNotes` so tampering with any of those fields is detected.

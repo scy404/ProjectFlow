@@ -2,7 +2,7 @@
 
 > Issue：[#99](https://github.com/wubq511/ProjectFlow/issues/99)
 >
-> 状态：2026-07-20 已合并到 `main`（`a3df83d`）并关闭 Issue #99。下一项为 Issue #100 evidence-backed showcase 与 T46 closeout。
+> 状态：2026-07-20 已合并到 `main`（`a3df83d`）并关闭 Issue #99。下一项为 Issue #100 evidence-backed showcase 与 T46 closeout（详见 [Slice 5 Handoff](ProjectFlow_Agent_Evaluation_Lab_Slice5_Handoff.md)）。
 >
 > 边界：#99 在 #98 的 governed calibration 之上补齐 Slice 4 Golden Core 扩展与冻结。ProjectFlow deterministic hard gates 永远优先；grader 不调用 SUT 业务实现；fixture/goal/oracle/Reference Program/grader mutation 逻辑独立；不弱化 privacy/authority/Proposal-Confirm/idempotency/P0 hard gates/预算/fail-closed。本 ticket 不做跨 Slice 全面审查；不执行 Issue #100 的 Dashboard/viewer 工作；不执行 active-standard promotion；不调用付费模型。
 
@@ -259,10 +259,10 @@ git diff --check main...HEAD
 
 ## 后续可能工作（不属于 #99）
 
-- Issue #100：portable showcase、loopback-only read viewer、live preview、retention planning、Agent-first acceptance 与 T46 closeout；
-- Golden Core 30/52 剩余回归的跨 Slice 对抗审查、根因修复与回归对齐（按用户要求在全部 T46 tickets 完成后统一进行）；
+- ~~Issue #100：portable showcase、loopback-only read viewer、live preview、retention planning、Agent-first acceptance 与 T46 closeout~~（2026-07-27 已实现并完成跨 Slice 审查）；
+- ~~Golden Core 30/52 剩余回归的跨 Slice 对抗审查、根因修复与回归对齐~~（Robert 批准 S1–S6 后 post-review final run `run_1785085331148` 为 52/52）；
 - 付费模型真实运行（在冻结价格表与调用前最坏成本前继续 fail-closed）；
 - 跨模型 Judge 横评；
 - active-standard promotion（需要显式 Robert instruction）；
 - semantic hard-gate promotion 评估；
-- 全面对抗审查按用户要求留到全部 T46 tickets 完成后统一进行。
+- 全面对抗审查已于 2026-07-27 完成；结果见 `ProjectFlow_Agent_Evaluation_Lab_Final_Audit_2026-07-26.md`。

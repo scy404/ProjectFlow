@@ -6,7 +6,7 @@ The primary Agent path uses the T41 TypeScript Agent Bridge Sidecar with Pi comp
 
 ## Current Status
 
-All MVP and MVP Usable tasks are complete. T41 Agent Runtime, T42 ProjectMemory V1, T43 Agent Harness V2 P0, T44 efficiency/model integrity, and T45 private conversation history are implemented. T46 Issues #94-#99 are merged and closed. Issue #99 freezes a ProjectFlow Golden Core of 52 canonical scenarios across 8 capability domains × 8 scenario classes, with a single versioned auditable registry, 9 trusted entry conditions per stateful scenario, an immovable P0 set of 8 categories, 6 non-count-inflating robustness variant kinds, governed regression candidates, and a `golden-core` preset with the same `$1` SUT cap as `full`. Its light release gate passed Agent Bridge 2255/2255 plus typecheck/build, preserved `full` mock at 16/16, and published an integrity-verified Golden Core baseline of 30/52; the remaining failures are evidence for the final cross-slice review, not grounds to weaken graders. Paid models remain fail-closed until frozen pricing and pre-call worst-case estimates exist. Issue #100 is next and owns the evidence-backed showcase and T46 closeout.
+All MVP and MVP Usable tasks are complete. T41 Agent Runtime, T42 ProjectMemory V1, T43 Agent Harness V2 P0, T44 efficiency/model integrity, and T45 private conversation history are implemented. T46 Issues #94-#99 are merged and closed. Issue #100 (Slice 5 evidence-backed showcase and T46 closeout) is implemented on `glm/t46-100-showcase-closeout` and ready to merge. The cross-slice adversarial review and S1–S6 candidate changes are complete. Final post-review evidence: Golden Core mock 52/52 (run `run_1785085331148`, integrity `91737377d5de9b5c6725fe3505c26c66743519350b2d199fc9dd0255e46863b2`), C1 real paid Flash preview 3/3 (149395ms, window met, integrity `2d8746b78305a35ec425c76c32b4fcbd0930b583c4f5b006d10117b9dd37cf3e`), C2 real agent acceptance passed (audited summary integrity `d29955085d78500f186f9f636a423ce6b5e2421a2347c1f8cc5d92627d7b2c7e`). The committed-ready showcase bundle has integrity `0904064f7618693e8285a8358d15f5b6ac5c1551c36731841d081d16c325a5bc`, `releaseVerdict: passed`, and `honestBaseline: 52/52`. Issues #100/#93 technical close gates are satisfied; merge and issue closure remain. Active semantic promotion is an explicit non-goal, and ordinary paid runs continue fail-closed (exception: bounded `preview` command with Flash at `$0.10` ceiling). See [`docs/T46/ProjectFlow_Agent_Evaluation_Lab_Final_Audit_2026-07-26.md`](docs/T46/ProjectFlow_Agent_Evaluation_Lab_Final_Audit_2026-07-26.md) for the complete evidence chain and closeout checklist.
 
 - Phase 0 / GitHub #2 — Guardrails & Setup
 - Phase 1 / GitHub #3 — Account / Workspace / Member Profile
@@ -45,8 +45,10 @@ All MVP and MVP Usable tasks are complete. T41 Agent Runtime, T42 ProjectMemory 
 - T46 Evaluation Lab Slice 1 multi-turn / Skill / Runtime / Reliability / GitHub #96 — deterministic multi-turn user controller, simulator integrity, attempt ledger, Skill 8 dimensions, Runtime 11 fault classes, demo/smoke/smoke-v2/full presets, isolated candidate/baseline execution, reliability statistics, operational metrics and Slice 1 exit gate (merged and closed 2026-07-20)
 - T46 Evaluation Lab Slice 2 Diagnosis & Repair / GitHub #97 — evidence-graded diagnoses with 5 frozen causal statuses, evaluator-owned counterfactuals, 8-category fault profiles, anti-gaming RCA benchmark, immutable Repair Packets with fix/investigation gate, and governed Coding Agent prompts (merged and closed 2026-07-20)
 - T46 Evaluation Lab Slice 3 Governed Calibration & Semantic Standards / GitHub #98 — active/candidate standards registries, 6 frozen conflict patterns, criterion-scoped semantic rubrics, 6 bias metrics, 9 fail-safe conditions, calibrate preset with SUT `$3` cap, immutable calibration artifact, `applyPromotionApproval` as the only active mutation path (merged and closed 2026-07-20)
+- T46 Evaluation Lab Slice 4 Golden Core Expansion & Freeze / GitHub #99 — 52 canonical scenarios across 8 capability domains × 8 scenario classes, single versioned auditable registry, 9 trusted entry conditions per stateful scenario, immovable P0 set of 8 categories, 6 non-count-inflating robustness variant kinds, governed regression candidates, `golden-core` preset with `$1` SUT cap (merged and closed 2026-07-20)
+- T46 Evaluation Lab Slice 5 Evidence-Backed Showcase & Closeout / GitHub #100 — portable committed redacted showcase bundle, loopback-only local read viewer, live preview with `$0.10` smoke ceiling (6 pre-call gates plus post-run model/telemetry/window/status checks), schema/hash/provenance verification, zero-deletion retention planning, Agent-first acceptance harness for codex/claude-code/trae-equivalent shell profiles (21/21), C1 real paid Flash preview (3/3, 149395ms, window met), C2 real agent acceptance (3 slots, audited verdict passed). Cross-slice adversarial review complete; Golden Core mock final 52/52. Implemented on `glm/t46-100-showcase-closeout` (local commit, not pushed/merged/closed 2026-07-27); technical close gates passed.
 
-Implemented: FastAPI backend with private multi-conversation persistence and service-token-protected internal runtime/tools; T41 typed domain tools and Proposal-Confirm; T42 governed ProjectMemory; T43 durable Agent Harness V2; T44 request/model/prompt/Skill efficiency hardening; the T46 trustworthy evaluation minimum loop; the T46 Slice 1 ProjectFlow-aware deterministic hard graders; and the T46 Slice 1 multi-turn / Skill / Runtime / reliability surface. See [the post-T44 production canary](docs/T44/post-t44-production-canary-2026-07-13.md) for repeated model evidence, [the T46 Slice 0 handoff](docs/T46/ProjectFlow_Agent_Evaluation_Lab_Slice0_Handoff.md) for evaluator usage and trust boundaries, and [the T46 Slice 1 handoff](docs/T46/ProjectFlow_Agent_Evaluation_Lab_Slice1_Handoff.md) for hard grader contracts, the #96 module table, adversarial review remediation, and the Slice 1 closure path.
+Implemented: FastAPI backend with private multi-conversation persistence and service-token-protected internal runtime/tools; T41 typed domain tools and Proposal-Confirm; T42 governed ProjectMemory; T43 durable Agent Harness V2; T44 request/model/prompt/Skill efficiency hardening; the T46 trustworthy evaluation minimum loop; the T46 Slice 1 ProjectFlow-aware deterministic hard graders; the T46 Slice 1 multi-turn / Skill / Runtime / reliability surface; and the T46 Slice 5 evidence-backed showcase and closeout. See [the post-T44 production canary](docs/T44/post-t44-production-canary-2026-07-13.md) for repeated model evidence, [the T46 Slice 0 handoff](docs/T46/ProjectFlow_Agent_Evaluation_Lab_Slice0_Handoff.md) for evaluator usage and trust boundaries, [the T46 Slice 1 handoff](docs/T46/ProjectFlow_Agent_Evaluation_Lab_Slice1_Handoff.md) for hard grader contracts, the #96 module table, adversarial review remediation, and the Slice 1 closure path, and [the T46 Slice 5 handoff](docs/T46/ProjectFlow_Agent_Evaluation_Lab_Slice5_Handoff.md) for the showcase/viewer/preview/retention/agent-acceptance contracts and T46 closeout status.
 
 ## Stack
 
@@ -148,6 +150,14 @@ scripts/eval-lab golden-core freeze --json
 scripts/eval-lab golden-core verify --json
 scripts/eval-lab validate --preset golden-core --model mock:mock-model
 scripts/eval-lab golden-core candidates --json
+
+# Slice 5 Evidence-Backed Showcase & Closeout (#100, local commit on glm/t46-100-showcase-closeout)
+scripts/eval-lab showcase export <run-id> --json
+scripts/eval-lab showcase verify <bundle-path>
+scripts/eval-lab viewer start <run-id> [--port <port>] --json
+scripts/eval-lab preview --model deepseek:deepseek-v4-flash --json
+scripts/eval-lab retention --json
+scripts/eval-lab agent-acceptance --profile all --json
 ```
 
 ## Frontend
@@ -197,6 +207,8 @@ npm audit --omit=dev
 - [Evaluation Lab Slice 0 handoff](docs/T46/ProjectFlow_Agent_Evaluation_Lab_Slice0_Handoff.md)
 - [Evaluation Lab Slice 1 handoff](docs/T46/ProjectFlow_Agent_Evaluation_Lab_Slice1_Handoff.md)
 - [Evaluation Lab Slice 3 handoff](docs/T46/ProjectFlow_Agent_Evaluation_Lab_Slice3_Handoff.md)
+- [Evaluation Lab Slice 5 handoff](docs/T46/ProjectFlow_Agent_Evaluation_Lab_Slice5_Handoff.md)
+- [Evaluation Lab Final Audit & Closeout](docs/T46/ProjectFlow_Agent_Evaluation_Lab_Final_Audit_2026-07-26.md)
 - [Domain glossary](CONTEXT.md)
 - [T23 test docs](docs/T23/)
 - [T23.A feedback](docs/T23/T23.A.feedback.md)
