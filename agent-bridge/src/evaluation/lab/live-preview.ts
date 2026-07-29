@@ -154,8 +154,11 @@ export const LIVE_PREVIEW_SCENARIOS = Object.freeze(
       // the aggregate 5-minute wall cap but grants each turn up to 90s.
       clone.hidden.maxLatencyMs = Math.max(clone.hidden.maxLatencyMs, 90_000);
       // Tool-using max-reasoning turns can legitimately require five model
-      // requests. The aggregate preview budget remains capped at 24.
-      clone.hidden.maxRequestCount = Math.max(clone.hidden.maxRequestCount, 8);
+      // requests, and even a single proposal-generation turn has been observed
+      // to consume 9 requests with deepseek-v4-flash max reasoning. The
+      // aggregate preview budget remains capped at 24 so that the aggregate
+      // ceiling stays the binding constraint.
+      clone.hidden.maxRequestCount = Math.max(clone.hidden.maxRequestCount, 12);
       return clone;
     }),
 );
