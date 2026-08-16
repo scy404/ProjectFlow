@@ -1,166 +1,137 @@
 # ProjectFlow
 
-ProjectFlow is a local-first active project agent MVP for college project teams. The demo target is a full loop from workspace setup through planning, assignment, active push, check-in, risk analysis, replanning, and review export.
+<div align="center">
 
-The primary Agent path uses the T41 TypeScript Agent Bridge Sidecar with Pi component runtime, typed ProjectFlow tools, durable AgentRunState, and Proposal-Confirm Commit. The legacy `CoordinatorAgent` remains only as migration/fallback code. For new Agent runtime work, start from the T41-T45 docs rather than extending the legacy Coordinator.
+**A proactive AI Agent for college project teams**
 
-## Current Status
+[![Status](https://img.shields.io/badge/Status-Closed-2ea44f)](docs/handoff.md)
+[![Next.js](https://img.shields.io/badge/Next.js-16-000000?logo=next.js)](https://nextjs.org)
+[![FastAPI](https://img.shields.io/badge/FastAPI-backend-009688?logo=fastapi)](https://fastapi.tiangolo.com)
+[![TypeScript](https://img.shields.io/badge/TypeScript-sidecar-3178C6?logo=typescript)](https://www.typescriptlang.org)
+[![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python)](https://www.python.org)
+[![SQLite](https://img.shields.io/badge/SQLite-zero-config-003B57?logo=sqlite)](https://www.sqlite.org)
 
-All MVP and MVP Usable tasks are complete. T41 Agent Runtime, T42 ProjectMemory V1, T43 Agent Harness V2 P0, T44 efficiency/model integrity, and T45 private conversation history are implemented. T46 Issues #94-#100 and parent Issue #93 are merged and closed; Slice 5 plus cross-slice remediation landed on `main` at `4728cf2`. The cross-slice adversarial review and S1–S6 candidate changes are complete. Final post-review evidence: Golden Core mock 52/52 (run `run_1785085331148`, integrity `91737377d5de9b5c6725fe3505c26c66743519350b2d199fc9dd0255e46863b2`), C1 real paid Flash preview 3/3 (149395ms, window met, integrity `2d8746b78305a35ec425c76c32b4fcbd0930b583c4f5b006d10117b9dd37cf3e`), C2 real agent acceptance passed (audited summary integrity `d29955085d78500f186f9f636a423ce6b5e2421a2347c1f8cc5d92627d7b2c7e`). The committed showcase bundle has integrity `0904064f7618693e8285a8358d15f5b6ac5c1551c36731841d081d16c325a5bc`, `releaseVerdict: passed`, and `honestBaseline: 52/52`. Active semantic promotion is an explicit non-goal, and ordinary paid runs continue fail-closed (exception: bounded `preview` command with Flash at `$0.10` ceiling). See [`docs/T46/ProjectFlow_Agent_Evaluation_Lab_Final_Audit_2026-07-26.md`](docs/T46/ProjectFlow_Agent_Evaluation_Lab_Final_Audit_2026-07-26.md) for the complete evidence chain and closeout checklist.
+</div>
 
-- Phase 0 / GitHub #2 — Guardrails & Setup
-- Phase 1 / GitHub #3 — Account / Workspace / Member Profile
-- Phase 2 / GitHub #4 — Project Intake + Resources + Core APIs
-- Phase 3 / GitHub #6 — Frontend Shell, Onboarding, Workspace, and Intake
-- Phase 4 / GitHub #5 — Agent Core Flow
-- Phase 5–7 / GitHub #8 — Assignment, Active Push, Check-in, Risk, Replan
-- Phase 8 / GitHub #10 — Demo Seed, Reset, Runbook, and Review Export
-- Phase 9 / GitHub #11 — Verification, Tests, and Demo Stability Hardening
-- MVP Usable / GitHub #18 — Prompt and Schema Quality Hardening
-- MVP Usable / GitHub #20 — Assignment, Push, Risk, and Replan Usability Pass
-- MVP Usable / GitHub #16 — Real LLM Provider Readiness and Diagnostics
-- MVP Usable / GitHub #17 — Agent Output Persistence and Confirmation
-- MVP Usable / GitHub #19 — Frontend Agent Status and Review UX
-- MVP Usable / GitHub #21 — Real-Provider Verification and MVP Usable Runbook
-- Phase 20 — Workspace Member Management (2026-05-31)
-- Phase 21 — Test Docs + User Switcher (2026-05-31)
-- Phase 22 — T23.A Feedback Fixes (2026-06-02)
-- Phase 25 — T23.D Feedback Fixes (2026-06-03)
-- Phase 27 — Code Review Hardening (2026-06-03)
-- Phase 28 — Frontend Redesign Migration (2026-06-04)
-- Phase 29 — Agent Output Quality & Reliability Hardening (2026-06-05)
-- Phase 32 — Route Unification & Workspace Navigation Fixes (2026-06-05)
-- Phase 33 — Stage Plan Timeline Redesign (2026-06-05)
-- Phase 34-36 — File Upload, Resource Management & Project Deletion (2026-06-06)
-- Phase 37-39 — Workspace UX, Landing Redesign, Agent UX Fixes (2026-06-06~07)
-- Phase 40 — Agent Sidebar UI Polish & Planner Reliability (2026-06-07)
-- Phase 41 — Security Review & Performance Optimization (2026-06-08)
-- T41 S6-S13 / GitHub #51-#58 — Stage plan proposal, advisory Risk/ActionCard write, AssignmentProposal tool, check-in inferred task changes through replan proposal, parity/cutover safety net, direction-card/task-breakdown proposal tools, S11 frontend integration, and advisory create_risk/create_checkin tools (2026-07-06)
-- T42 ProjectMemory V1 / GitHub #71-#80 — governed project memory, deterministic extraction, visibility, retrieval, Agent context injection, evaluation harness, optional vector guardrails, and frontend read-only memory list/export UI (2026-07-07)
-- T43 Agent Harness V2 P0 / GitHub #88 — goal/plan/verify control plane, context compaction, Skills V2, manifest-enforced executor, checkpoint/resume/steering, operational eval and frontend run controls (2026-07-12)
-- T44 Agent efficiency and model integrity / GitHub #90 — exact-once input, normalized cache/cost telemetry, truthful model selection, stable Prompt Kernel and pre-execution Skill/tool safety (2026-07-13)
-- T45 private conversation history / GitHub #91 — private/team conversations, safe migration, viewer authorization, cursor pagination and Agent sidebar history UI (2026-07-13)
-- T46 Evaluation Lab Slice 0 / GitHub #94 — evaluator-owned isolation, bounded smoke execution, immutable evidence, machine-readable CLI and Coding Agent Skill (2026-07-17)
-- T46 Evaluation Lab Slice 1 foundation / GitHub #95 — scoped evidence, hard-state/authority oracles, public confirm/reject E2E, hidden-field commitments and `smoke-v2` (merged 2026-07-19)
-- T46 Evaluation Lab Slice 1 multi-turn / Skill / Runtime / Reliability / GitHub #96 — deterministic multi-turn user controller, simulator integrity, attempt ledger, Skill 8 dimensions, Runtime 11 fault classes, demo/smoke/smoke-v2/full presets, isolated candidate/baseline execution, reliability statistics, operational metrics and Slice 1 exit gate (merged and closed 2026-07-20)
-- T46 Evaluation Lab Slice 2 Diagnosis & Repair / GitHub #97 — evidence-graded diagnoses with 5 frozen causal statuses, evaluator-owned counterfactuals, 8-category fault profiles, anti-gaming RCA benchmark, immutable Repair Packets with fix/investigation gate, and governed Coding Agent prompts (merged and closed 2026-07-20)
-- T46 Evaluation Lab Slice 3 Governed Calibration & Semantic Standards / GitHub #98 — active/candidate standards registries, 6 frozen conflict patterns, criterion-scoped semantic rubrics, 6 bias metrics, 9 fail-safe conditions, calibrate preset with SUT `$3` cap, immutable calibration artifact, `applyPromotionApproval` as the only active mutation path (merged and closed 2026-07-20)
-- T46 Evaluation Lab Slice 4 Golden Core Expansion & Freeze / GitHub #99 — 52 canonical scenarios across 8 capability domains × 8 scenario classes, single versioned auditable registry, 9 trusted entry conditions per stateful scenario, immovable P0 set of 8 categories, 6 non-count-inflating robustness variant kinds, governed regression candidates, `golden-core` preset with `$1` SUT cap (merged and closed 2026-07-20)
-- T46 Evaluation Lab Slice 5 Evidence-Backed Showcase & Closeout / GitHub #100 — portable committed redacted showcase bundle, loopback-only local read viewer, live preview with `$0.10` smoke ceiling (6 pre-call gates plus post-run model/telemetry/window/status checks), schema/hash/provenance verification, zero-deletion retention planning, Agent-first acceptance harness for codex/claude-code/trae-equivalent shell profiles (21/21), C1 real paid Flash preview (3/3, 149395ms, window met), C2 real agent acceptance (3 slots, audited verdict passed). Cross-slice adversarial review complete; Golden Core mock final 52/52. Implemented on `glm/t46-100-showcase-closeout` (local commit, not pushed/merged/closed 2026-07-27); technical close gates passed.
+> 📖 **中文文档：[README.zh-CN.md](README.zh-CN.md)**
+>
+> A traditional task board records tasks; ProjectFlow answers *what's next*.
 
-Implemented: FastAPI backend with private multi-conversation persistence and service-token-protected internal runtime/tools; T41 typed domain tools and Proposal-Confirm; T42 governed ProjectMemory; T43 durable Agent Harness V2; T44 request/model/prompt/Skill efficiency hardening; the T46 trustworthy evaluation minimum loop; the T46 Slice 1 ProjectFlow-aware deterministic hard graders; the T46 Slice 1 multi-turn / Skill / Runtime / reliability surface; and the T46 Slice 5 evidence-backed showcase and closeout. See [the post-T44 production canary](docs/T44/post-t44-production-canary-2026-07-13.md) for repeated model evidence, [the T46 Slice 0 handoff](docs/T46/ProjectFlow_Agent_Evaluation_Lab_Slice0_Handoff.md) for evaluator usage and trust boundaries, [the T46 Slice 1 handoff](docs/T46/ProjectFlow_Agent_Evaluation_Lab_Slice1_Handoff.md) for hard grader contracts, the #96 module table, adversarial review remediation, and the Slice 1 closure path, and [the T46 Slice 5 handoff](docs/T46/ProjectFlow_Agent_Evaluation_Lab_Slice5_Handoff.md) for the showcase/viewer/preview/retention/agent-acceptance contracts and T46 closeout status.
+ProjectFlow is a **proactive AI Agent for college project teams**. Unlike a passive task board, it continuously answers four questions: **Where should the project go? What should we do next? Who is best suited for which task? What is at risk?**
 
-## Stack
+Starting from a vague idea, ProjectFlow clarifies direction, generates stage plans, breaks down tasks, recommends assignments, and — during execution — actively tracks progress, surfaces risks, and adjusts the plan. Every AI suggestion is explainable, confirmable, and reversible: the Agent only proposes, and the final decision always stays with a human.
 
-- Frontend: Next.js, React, TypeScript, Tailwind CSS, shadcn/ui, Framer Motion
-- Backend: FastAPI, SQLModel, Pydantic
-- Agent Bridge: TypeScript (Node.js), Pi component runtime, typed ProjectFlow tools
-- Database: SQLite for local demo data
+## ✨ What It Solves
 
-## Backend
+Built for 3–8 person student teams, it turns "keep the project moving" over to a proactive Agent instead of a checklist waiting to be filled in:
+
+| Pain point | What ProjectFlow does |
+|------------|-----------------------|
+| Don't know where to start | Clarify direction → produce a Direction Card (goal / users / value / boundaries / risks) |
+| Don't know how to decompose | Stage planning → task breakdown (priority / dependencies / acceptance criteria) |
+| Don't know who does what | Assignment recommendation (skills / availability / preferences / constraints, with reasons) |
+| Work drifts off track | Push action cards, track progress, surface risks, replan when needed |
+
+## 🧭 Agent Workflow
+
+The Agent is driven by a deterministic state machine and only produces suggestions at designated nodes, which are persisted only after human confirmation:
+
+```mermaid
+flowchart LR
+    A["Account / Workspace"] --> B["Member Profiles"]
+    B --> C["Project Intake"]
+    C --> D["Clarify Direction"]
+    D --> E["Stage Planning"]
+    E --> F["Task Breakdown"]
+    F --> G["Assignment Recommendation"]
+    G --> H["Confirm Assignment"]
+    H --> I["Active Push"]
+    I --> J["Execute / Check-in"]
+    J --> K["Risk Analysis"]
+    K --> L["Replanning"]
+    L -. loop .-> I
+```
+
+## 🏗️ Architecture
+
+```mermaid
+flowchart TB
+    subgraph Client["Frontend :3000"]
+        UI["Next.js · React · Tailwind · shadcn/ui<br/>three-column layout + Agent sidebar"]
+    end
+
+    subgraph Sidecar["Agent Bridge Sidecar :4000"]
+        RT["Pi Runtime"]
+        TOOLS["Typed ProjectFlow Tools"]
+        POL["Policy / Effect Ceiling"]
+        ROUTER["Model Router"]
+    end
+
+    subgraph Backend["FastAPI Backend :8000"]
+        API["REST API / Internal Agent Tools"]
+        DB[("SQLite")]
+        MEM["ProjectMemory<br/>FTS5 · optional vector"]
+    end
+
+    UI -->|"SSE streaming"| Sidecar
+    UI -->|"REST"| API
+    Sidecar -->|"Service Token"| API
+    API --> DB
+    API --> MEM
+    ROUTER -->|"DeepSeek · Xiaomi · OpenAI · Anthropic"| LLM["LLM Providers"]
+```
+
+**Design principles:**
+
+- **Proposal-Confirm state machine** — the Agent only produces proposals; primary facts (project direction / stages / tasks / assignment ownership) are committed only after human confirmation.
+- **FastAPI is the single source of truth** — the Sidecar never touches the business DB directly; all persistence goes through service-token-protected internal contracts.
+- **Pluggable models** — a multi-provider registry with dynamic imports supports DeepSeek, Xiaomi MiMo, OpenAI, Anthropic, OpenRouter, and custom OpenAI-compatible endpoints.
+- **Local-first** — SQLite with zero configuration works out of the box; the default `mock` model lets you experience the full loop with no API key.
+
+| Layer | Technology |
+|-------|------------|
+| Frontend | Next.js 16 · React · TypeScript · Tailwind CSS · shadcn/ui · Framer Motion |
+| Backend | FastAPI · SQLModel · Pydantic · SQLite |
+| Agent | TypeScript Sidecar · Pi component runtime · typed ProjectFlow tools |
+| Memory | ProjectMemory (FTS5 + jieba retrieval, optional vector retrieval) |
+| Evaluation | In-house Evaluation Lab (deterministic hard graders + 52-scenario Golden Core) |
+
+## 🎯 Key Capabilities
+
+| Capability | What the Agent produces |
+|------------|-------------------------|
+| **Clarify Direction** | A Direction Card — problem, users, value, deliverables, boundaries, risks |
+| **Stage Planning** | Stages with goals, time ranges, deliverables, completion criteria |
+| **Task Breakdown** | Tasks with priority (P0/P1/P2), dependencies, acceptance criteria, cut flags |
+| **Assignment** | Recommended owner + backup owner + reason, matched against skills / availability / preferences / constraints |
+| **Active Push** | Action cards — title, content, reason, target, kickoff suggestion, done criteria |
+| **Check-in** | Captures what was done, blockers, available time, confidence; updates task status |
+| **Risk Analysis** | Risks typed as deadline / dependency / workload / scope / review / assignment / check-in, each with structured evidence |
+| **Replanning** | Before/after diff with impact and rationale; high-impact changes require confirmation |
+
+Every suggestion carries an explicit `reason` for explainability, and the Agent never fabricates members, tasks, or stages.
+
+## 🚀 Quick Start
+
+> Prerequisites: Python 3.11+, Node.js 18+. Repo automation scripts pin Node `24.15.0` / npm `11.12.1`.
+
+### 1. Backend (:8000)
 
 ```bash
 cd backend
 python -m venv .venv
-.venv\Scripts\Activate.ps1
+# Windows: .venv\Scripts\Activate.ps1   |   macOS/Linux: source .venv/bin/activate
 pip install -e ".[dev]"
-uvicorn app.main:app --reload --port 8000
+python -m uvicorn app.main:app --reload --port 8000
 ```
 
-Health check:
+The first launch auto-creates the SQLite database. Health check:
 
 ```bash
 curl http://localhost:8000/api/health
 ```
 
-Load demo seed data:
-
-```bash
-curl -X POST http://localhost:8000/api/seed/demo
-```
-
-Reset to empty state:
-
-```bash
-curl -X POST http://localhost:8000/api/seed/reset
-```
-
-Backend tests:
-
-```bash
-cd backend
-.venv\Scripts\python -m pytest app/tests/ -v
-```
-
-## Agent Bridge Sidecar
-
-```bash
-scripts/project-npm --prefix agent-bridge install
-scripts/project-npm --prefix agent-bridge run start
-```
-
-test：
-
-```bash
-scripts/project-npm --prefix agent-bridge run test
-scripts/project-npm --prefix agent-bridge run typecheck
-scripts/project-npm --prefix agent-bridge run build
-```
-
-## Agent Evaluation Lab
-
-Slice 0 runs the bounded local mock smoke; Issues #95/#96 supply hard-domain, multi-turn, Skill, Runtime, reliability and paired evaluation; Issue #97 adds evidence-graded diagnosis, counterfactuals, fault profiles, RCA benchmark and Repair Packets; Issue #98 adds governed calibration and semantic standards; merged Issue #99 expands the suite into a frozen 52-scenario Golden Core with P0 immovable set, robustness variants and candidate governance. Coding Agent and evaluator costs are reported separately and never count against the ProjectFlow Agent cap.
-
-```bash
-# Slice 0 — minimum trustworthy loop
-scripts/eval-lab validate --preset smoke --model mock:mock-model
-scripts/eval-lab run --preset smoke --model mock:mock-model --json
-scripts/eval-lab verify <run-id>
-
-# Slice 1 foundation (#95) — V2 hard graders + public human-action seams
-scripts/eval-lab validate --preset smoke-v2 --model mock:mock-model
-scripts/eval-lab run --preset smoke-v2 --model mock:mock-model --json
-
-# Slice 1 multi-turn / Skill / Runtime / Reliability (#96, merged)
-scripts/eval-lab validate --preset demo --model mock:mock-model
-scripts/eval-lab validate --preset full --model mock:mock-model
-scripts/eval-lab exit-gate <run-id> --json
-scripts/eval-lab reliability <run-id> --json
-scripts/eval-lab compare --candidate <git-ref> --baseline <git-ref> --preset smoke --model mock:mock-model --json
-
-# Slice 2 Diagnosis & Repair (#97, merged)
-scripts/eval-lab diagnose <run-id> --json
-scripts/eval-lab repair-packet <run-id> --packet-id <optional-id> --json
-scripts/eval-lab rca-benchmark <run-id> --json
-scripts/eval-lab fault-catalog --json
-
-# Slice 3 Governed Calibration & Semantic Standards (#98, merged)
-scripts/eval-lab validate --preset calibrate --model mock:mock-model
-scripts/eval-lab calibrate <run-id> --json
-scripts/eval-lab promote-standard \
-  --candidate-id <id> --approver-robert \
-  --diff-path <path> --commit <sha> \
-  --before-fingerprint <fp> --after-fingerprint <fp> --json
-scripts/eval-lab conflict-catalog --json
-
-# Slice 4 Golden Core Expansion & Freeze (#99, merged and closed)
-scripts/eval-lab golden-core list --json
-scripts/eval-lab golden-core coverage --json
-scripts/eval-lab golden-core freeze --json
-scripts/eval-lab golden-core verify --json
-scripts/eval-lab validate --preset golden-core --model mock:mock-model
-scripts/eval-lab golden-core candidates --json
-
-# Slice 5 Evidence-Backed Showcase & Closeout (#100, local commit on glm/t46-100-showcase-closeout)
-scripts/eval-lab showcase export <run-id> --json
-scripts/eval-lab showcase verify <bundle-path>
-scripts/eval-lab viewer start <run-id> [--port <port>] --json
-scripts/eval-lab preview --model deepseek:deepseek-v4-flash --json
-scripts/eval-lab retention --json
-scripts/eval-lab agent-acceptance --profile all --json
-```
-
-## Frontend
+### 2. Frontend (:3000)
 
 ```bash
 cd frontend
@@ -168,62 +139,85 @@ npm install
 npm run dev
 ```
 
-Open:
+Open http://localhost:3000 .
 
-```text
-http://localhost:3000
-```
+### 3. Agent Bridge Sidecar (:4000, required for real LLM)
 
-Frontend verification:
+Skip this step in mock mode. To get real AI output, start the Sidecar and configure an API key:
 
 ```bash
-cd frontend
-npm run test
-npm run lint
-npm run build
-npm audit --omit=dev
+cd agent-bridge
+npm install
+npx tsx src/index.ts
 ```
 
-## Project Docs
+Model config lives in `agent-bridge/model-configs.json` + `agent-bridge/.env` (API keys stay out of JSON and out of Git), or manage it in the UI under **Settings → Model Config**.
 
-- [Agent optimization showcase and judging evidence](docs/showcase/agent-optimization-showcase-2026-07.md)
-- [Setup guide](docs/setup-guide.md)
-- [Technical design](docs/TECH-DESIGN.md)
-- [API contract](docs/api-contract.md)
-- [Runbook](docs/runbook.md)
-- [Demo script](docs/demo-script.md)
-- [Seed scenarios](docs/seed-scenarios.md)
-- [Code wiki](docs/code-wiki.md)
-- [Current handoff](docs/handoff.md)
-- [Agent Runtime T41 overview](docs/T41/ProjectFlow_Agent_Runtime_Team_TDD.md)
-- [Agent Runtime foundation design](docs/T41/ProjectFlow_Agent_Runtime_Foundation_Design.md)
-- [Agent Tools & Skills design](docs/T41/ProjectFlow_Agent_Tools_Skills_Design.md)
-- [ProjectMemory V1 design](docs/T42/project-memory-design-v4.1.md)
-- [ProjectMemory V1 closure review](docs/T42/project-memory-v1-closure.md)
-- [Agent Runtime ADRs](docs/adr/)
-- [Agent efficiency and model integrity spec](docs/T44/agent-efficiency-model-config-spec.md)
-- [Private conversation history spec](docs/T45/agent-conversation-history-spec.md)
-- [Evaluation Lab specification](docs/T46/ProjectFlow_Agent_Evaluation_Lab_Spec.md)
-- [Evaluation Lab Slice 0 handoff](docs/T46/ProjectFlow_Agent_Evaluation_Lab_Slice0_Handoff.md)
-- [Evaluation Lab Slice 1 handoff](docs/T46/ProjectFlow_Agent_Evaluation_Lab_Slice1_Handoff.md)
-- [Evaluation Lab Slice 3 handoff](docs/T46/ProjectFlow_Agent_Evaluation_Lab_Slice3_Handoff.md)
-- [Evaluation Lab Slice 5 handoff](docs/T46/ProjectFlow_Agent_Evaluation_Lab_Slice5_Handoff.md)
-- [Evaluation Lab Final Audit & Closeout](docs/T46/ProjectFlow_Agent_Evaluation_Lab_Final_Audit_2026-07-26.md)
-- [Domain glossary](CONTEXT.md)
-- [T23 test docs](docs/T23/)
-- [T23.A feedback](docs/T23/T23.A.feedback.md)
-- [T23.C feedback](docs/T23/T23.C.feedback.md)
-- [T23.D feedback](docs/T23/T23D.feedback.md)
-- [Issue #11 verification report](docs/issue-11-status-report.md)
+### 4. Load demo data
 
-## Runtime Files
+With the backend running:
 
-Keep secrets and local data out of git:
+```bash
+curl -X POST http://localhost:8000/api/seed/demo
+```
 
-- `.env`
-- API keys and other secret overrides referenced by `agent-bridge/model-configs.json`（the default registry itself is tracked）
-- `backend/data/`
-- SQLite files
-- `.venv/`
-- `node_modules/`
-- `frontend/.next/`
+This seeds a 6-member student team, a full project, 4 stages, 11 tasks, plus assignment suggestions, check-ins, risks, action cards, and an Agent timeline. Refresh the frontend to enter the demo project.
+
+> For step-by-step setup, real-LLM configuration, and troubleshooting, see [`docs/setup-guide.md`](docs/setup-guide.md).
+
+### Environment variables
+
+| File | Key | Purpose |
+|------|-----|---------|
+| `backend/.env` | `LLM_PROVIDER` | `mock` (default) / `openai` / `openai-compatible` |
+| `backend/.env` | `LLM_API_KEY` · `LLM_BASE_URL` · `LLM_MODEL` | Real LLM endpoint for the legacy single-model path |
+| `backend/.env` | `INTERNAL_SERVICE_TOKEN` | Bearer token for internal Agent-tools/runs endpoints |
+| `agent-bridge/.env` | `DEEPSEEK_API_KEY` · `XIAOMI_API_KEY` · … | Provider keys referenced by `model-configs.json` |
+
+`INTERNAL_SERVICE_TOKEN` must match between backend and Sidecar. Never commit `.env` or real API keys.
+
+## ✅ Tests & Acceptance Baseline
+
+| Side | Command | Final baseline (2026-07-27) |
+|------|---------|------------------------------|
+| Backend | `cd backend && .venv\Scripts\python -m pytest app/tests/ -v` | 912 passed / 4 skipped + ruff |
+| Agent Bridge | `scripts/project-npm --prefix agent-bridge run test` | 2651 passed + typecheck / build |
+| Frontend | `cd frontend && npm run test && npm run lint && npm run build` | 333 passed / 6 skipped + lint / build |
+
+## 📁 Project Structure
+
+```
+projectflow/
+├── frontend/            # Next.js frontend (components split by business domain)
+├── backend/             # FastAPI backend (route / service / model / schema layers)
+│   └── app/memory/      # ProjectMemory retrieval + optional vector extension
+├── agent-bridge/        # TypeScript Agent Bridge Sidecar (Pi runtime + tool registry)
+│   └── src/evaluation/  # T46 Evaluation Lab (hard graders / Golden Core / showcase)
+├── docs/                # PRD, tech design, API contract, phase handoffs
+├── scripts/             # eval-lab / project-npm unified entrypoints
+└── CONTEXT.md           # Agent Runtime domain glossary
+```
+
+## 📚 Documentation
+
+| Topic | Docs |
+|-------|------|
+| Product | [`docs/PRD-ProjectFlow-MVP.md`](docs/PRD-ProjectFlow-MVP.md) · [`docs/project-introduction.md`](docs/project-introduction.md) |
+| Tech design | [`docs/TECH-DESIGN.md`](docs/TECH-DESIGN.md) · [`docs/code-wiki.md`](docs/code-wiki.md) |
+| API contract | [`docs/api-contract.md`](docs/api-contract.md) |
+| Local setup | [`docs/setup-guide.md`](docs/setup-guide.md) |
+| Agent architecture | [`docs/T41/`](docs/T41/) · [`docs/adr/`](docs/adr/) · [`CONTEXT.md`](CONTEXT.md) |
+| Project memory | [`docs/T42/project-memory-v1-closure.md`](docs/T42/project-memory-v1-closure.md) |
+| Evaluation Lab | [`docs/T46/ProjectFlow_Agent_Evaluation_Lab_Spec.md`](docs/T46/ProjectFlow_Agent_Evaluation_Lab_Spec.md) |
+| Latest handoff | [`docs/handoff.md`](docs/handoff.md) |
+
+## 🏁 Milestones
+
+- **Phase 0–41** — full MVP loop (account / workspace / project / stage / task / assignment / active push / check-in / risk / replan), plus security hardening, performance optimization, and frontend polish.
+- **T41** — Agent Runtime rework: TypeScript Sidecar + Pi runtime + typed tools + Proposal-Confirm commit boundary.
+- **T42** — ProjectMemory V1: governed project memory with deterministic extraction, visibility control, retrieval, and Agent context injection.
+- **T43** — Agent Harness V2: Outcome Contract, Prompt Kernel, context compaction, Skills V2, checkpoint/resume/steering.
+- **T44 / T45** — agent efficiency and model integrity, private multi-conversation history.
+- **T46** — Evaluation Lab: a reproducible, trustworthy Agent evaluation loop (deterministic hard graders, 52-scenario Golden Core, evidence archiving and showcase).
+
+Full process and evidence chain: [`CHANGELOG.md`](CHANGELOG.md) and [`docs/handoff.md`](docs/handoff.md).
