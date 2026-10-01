@@ -1,6 +1,6 @@
 # ProjectFlow 项目类型统一与演示数据同步交接
 
-状态：本地实施与验证完成，等待推送 fork 新分支（2026-10-01）
+状态：本地实施与验证完成；GitHub 网络不可达，等待人工执行推送（2026-10-01）
 
 分支：`codex/unify-project-types-demo-seed-20261001`
 
@@ -69,4 +69,16 @@
 
 ## 推送记录
 
-待将本 handoff 提交后，仅推送 `origin/codex/unify-project-types-demo-seed-20261001`，随后补记远端校验结果。`origin/main` 和 `upstream/main` 当前均为 `f374ec55ea3aa1d5f3c6ad64f2c3a98e8d966038`，本次未修改。
+- 目标仅为 `origin/codex/unify-project-types-demo-seed-20261001`。
+- 2026-10-01 自动推送共尝试三次：沙箱内一次立即无法连接；获准联网后一次连接被重置、一次连接 21 秒后超时。三次均在建立/维持 HTTPS 连接阶段失败，没有远端写入成功的证据。
+- 失败前本地确认：`origin/main` 和 `upstream/main` 均为 `f374ec55ea3aa1d5f3c6ad64f2c3a98e8d966038`，本次未切换或提交到 `main`。
+- 网络恢复后在 PowerShell 执行：
+
+  ```powershell
+  cd 'C:\Users\53506\Documents\ChatGPT\AI+\ProjectFlow-opc-project-type'
+  git push -u origin codex/unify-project-types-demo-seed-20261001
+  git ls-remote origin refs/heads/codex/unify-project-types-demo-seed-20261001 refs/heads/main
+  git status --short --branch
+  ```
+
+- 预期：新分支远端 SHA 与本地 `HEAD` 一致；远端 `main` 仍为 `f374ec55ea3aa1d5f3c6ad64f2c3a98e8d966038`；工作区干净。
