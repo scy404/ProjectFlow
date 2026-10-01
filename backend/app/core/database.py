@@ -68,8 +68,22 @@ def _migrate_workspaces() -> None:
         columns = _get_sqlite_columns("workspaces")
         if "team_size" not in columns:
             conn.execute(text("ALTER TABLE workspaces ADD COLUMN team_size INTEGER"))
-        if "use_case" not in columns:
-            conn.execute(text("ALTER TABLE workspaces ADD COLUMN use_case TEXT"))
+        if "project_template" not in columns:
+            conn.execute(text(
+                "ALTER TABLE workspaces ADD COLUMN project_template TEXT NOT NULL DEFAULT 'general'"
+            ))
+            if "use_case" in columns:
+                conn.execute(text("""
+                    UPDATE workspaces
+                    SET project_template = CASE use_case
+                        WHEN 'course' THEN 'coursework'
+                        WHEN 'coursework' THEN 'coursework'
+                        WHEN 'competition' THEN 'competition'
+                        WHEN 'startup' THEN 'startup'
+                        WHEN 'research' THEN 'research'
+                        ELSE 'general'
+                    END
+                """))
         conn.commit()
 
 
