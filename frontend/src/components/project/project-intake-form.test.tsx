@@ -64,4 +64,22 @@ describe("ProjectIntakeForm", () => {
       }));
     });
   });
+
+  it("uses the workspace project type as the initial project type", async () => {
+    const { container } = render(
+      <ProjectIntakeForm
+        workspaceId="workspace-1"
+        defaultCreatedBy="user-1"
+        defaultProjectTemplate="research"
+      />,
+    );
+    fillRequiredFields(container);
+    fireEvent.click(screen.getByRole("button", { name: /开始规划/ }));
+
+    await waitFor(() => {
+      expect(apiMocks.createProject).toHaveBeenCalledWith("workspace-1", expect.objectContaining({
+        project_template: "research",
+      }));
+    });
+  });
 });

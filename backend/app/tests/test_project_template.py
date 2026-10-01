@@ -17,13 +17,13 @@ def owner_and_workspace(client: TestClient) -> tuple[str, str]:
         json={
             "name": "项目工作区",
             "team_size": 5,
-            "use_case": "competition",
+            "project_template": "competition",
         },
     )
     assert response.status_code == 201
     workspace = response.json()
     assert workspace["team_size"] == 5
-    assert workspace["use_case"] == "competition"
+    assert workspace["project_template"] == "competition"
     return user_id, workspace["id"]
 
 
@@ -56,7 +56,7 @@ def test_project_template_survives_all_read_paths(
     state = client.get(f"/api/projects/{project_id}/state").json()
     assert state["project"]["project_template"] == project_template
     assert state["workspace"]["team_size"] == 5
-    assert state["workspace"]["use_case"] == "competition"
+    assert state["workspace"]["project_template"] == "competition"
     agent_state = client.get(
         f"/api/workspaces/{workspace_id}/state",
         params={"project_id": project_id},
@@ -65,9 +65,29 @@ def test_project_template_survives_all_read_paths(
 
     workspace = client.get(f"/api/workspaces/{workspace_id}").json()
     assert workspace["team_size"] == 5
-    assert workspace["use_case"] == "competition"
+    assert workspace["project_template"] == "competition"
     listed = client.get("/api/workspaces").json()
     assert next(item for item in listed if item["id"] == workspace_id)["team_size"] == 5
+
+
+def test_workspace_project_template_defaults_and_rejects_unknown_value(client: TestClient) -> None:
+    user = client.post("/api/users", json={"display_name": "工作区创建者"}).json()
+    payload = {"name": "默认类型工作区"}
+
+    response = client.post(
+        "/api/workspaces",
+        params={"owner_user_id": user["id"]},
+        json=payload,
+    )
+    assert response.status_code == 201
+    assert response.json()["project_template"] == "general"
+
+    invalid = client.post(
+        "/api/workspaces",
+        params={"owner_user_id": user["id"]},
+        json={**payload, "project_template": "other"},
+    )
+    assert invalid.status_code == 422
 
 
 def test_project_template_defaults_and_rejects_unknown_value(

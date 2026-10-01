@@ -260,7 +260,7 @@ export async function createWorkspace(data: CreateWorkspaceRequest): Promise<Wor
         name: data.name,
         description: data.description ?? null,
         team_size: data.team_size,
-        use_case: data.use_case,
+        project_template: data.project_template,
       }),
     }
   );
