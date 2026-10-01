@@ -34,6 +34,8 @@
 | 9 | `frontend/src/components/project/project-intake-form.tsx` | 保存用户选的类型；未选用 `general`；移除不生效且与工作区重复的团队规模输入和草稿字段 | 表单测试 |
 | 10 | `frontend/src/components/project/project-content.tsx` | 项目总览显示已保存的课程、比赛、创业或研究类别；普通旧项目不增加无意义标签 | TypeScript 与 ESLint |
 | 11 | `backend/app/tests/test_project_template.py`, `frontend/src/components/project/project-intake-form.test.tsx` | 覆盖四种类型、默认值、非法值、各读取路径及 UI 提交 | 下方验证记录 |
+| 12 | 本机忽略配置：`backend/.env`, `agent-bridge/.env`, `agent-bridge/.env.model-configs.json`, `frontend/.env.local` | 配置本地 Mock 模型、服务地址及共享内部令牌；文件均被 `.gitignore` 排除，令牌不进入文档或提交 | 三服务实际启动与 HTTP 检查 |
+| 13 | `docs/competition/ProjectFlow_Windows本地启动指南.md` | 记录零基础用户每次启动、停止、首次安装和故障排查步骤 | 按指南完成本次启动 |
 
 ## 验证记录
 
@@ -45,6 +47,8 @@
 - `npm run build`：初次因执行环境不能连接 Google Fonts 而失败；联网重跑后 Next.js 编译、TypeScript、静态页面生成全部通过。
 - `git diff --check`：通过。
 - `npm ci --offline --ignore-scripts`：因缺少 `zwitch` 缓存而失败；随后 `npm ci --ignore-scripts` 成功安装锁定依赖。安装输出报告 21 项依赖审计问题，未在本次功能修复中变更依赖版本。
+- 本地启动验收（2026-10-01）：后端 `127.0.0.1:8000/docs` 返回 200；Agent Bridge `127.0.0.1:4000/health` 返回 200 且加载 `mock:mock-model`；前端 `127.0.0.1:3000` 返回 200。
+- `git check-ignore` 确认四个本机配置文件均被忽略；配置中的共享内部令牌未写入提交文档。
 
 ## 剩余事项
 
