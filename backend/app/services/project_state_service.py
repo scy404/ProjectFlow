@@ -155,6 +155,7 @@ def _risk_to_read(risk: Risk) -> RiskRead:
         title=risk.title,
         description=risk.description,
         evidence=_json_list(risk.evidence),
+        evidence_refs=risk.evidence_refs,
         recommendation=risk.recommendation,
         status=risk.status,
         created_by_agent=risk.created_by_agent,

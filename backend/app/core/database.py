@@ -100,6 +100,21 @@ def _migrate_projects() -> None:
             conn.commit()
 
 
+def _migrate_evidence_refs() -> None:
+    """Add durable structured evidence columns without requiring a DB rebuild."""
+    if not settings.database_url.startswith("sqlite"):
+        return
+    with engine.connect() as conn:
+        for table_name in ("assignment_proposals", "risks", "action_cards"):
+            columns = _get_sqlite_columns(table_name)
+            if columns and "evidence_refs" not in columns:
+                conn.execute(text(
+                    f"ALTER TABLE {table_name} "
+                    "ADD COLUMN evidence_refs JSON NOT NULL DEFAULT '[]'"
+                ))
+        conn.commit()
+
+
 def _migrate_agent_runs_v2() -> None:
     """Add viewer_user_id column to agent_runs_v2 if missing."""
     if not settings.database_url.startswith("sqlite"):
@@ -238,6 +253,7 @@ def create_db_and_tables() -> None:
     _migrate_tasks_order_index()
     _migrate_workspaces()
     _migrate_projects()
+    _migrate_evidence_refs()
     _migrate_agent_runs_v2()
     _migrate_agent_runs_v2_attribution()
     _migrate_agent_conversations_multi()

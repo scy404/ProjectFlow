@@ -125,6 +125,16 @@ export type DirectionCard = {
   boundaries: string[];
   risks: string[];
   suggested_questions: string[];
+  source_summary?: string;
+  assumptions?: string[];
+  unknowns?: string[];
+  mvp_boundary?: {
+    must_have: string[];
+    defer: string[];
+    out_of_scope: string[];
+  };
+  decision_points?: string[];
+  reason?: string;
 };
 
 // --- Project Resource ---
