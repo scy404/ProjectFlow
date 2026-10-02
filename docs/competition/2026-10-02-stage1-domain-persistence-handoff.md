@@ -108,7 +108,7 @@ Workspace 继续返回并保留 `team_size/project_template`。根据 2026-10-01
 - 功能提交：`9dda8a9 feat: repair stage 1 domain persistence chains`。
 - 未修改 `main`，未向 upstream 写入。
 - 本文档提交：本条追溯补记所在提交。
-- 远端 fork 分支：待推送；若网络不可用，执行本文末尾命令即可。
+- 远端 fork 分支：已推送至 `origin/codex/stage1-repair-domain-persistence-20261002`。
 
 ```powershell
 cd 'C:\Users\53506\Documents\ChatGPT\AI+\ProjectFlow-opc-project-type'
