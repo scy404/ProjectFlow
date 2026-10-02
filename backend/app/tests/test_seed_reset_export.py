@@ -85,6 +85,7 @@ class TestSeedEndpoint:
 
         assert response.status_code == 200
         assert response.json()["project_template"] == "competition"
+        assert response.json()["is_demo"] is True
         direction_card = response.json()["direction_card"]
         assert direction_card["users"] == "大学生项目小队（3-8人）"
         assert "AI Agent 主动推进项目" in direction_card["value"]

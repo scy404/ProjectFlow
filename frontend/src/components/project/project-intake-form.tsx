@@ -3,10 +3,15 @@
 import * as React from "react"
 import { motion } from "framer-motion"
 import {
+  ArrowRight,
+  CheckCircle2,
   Loader2,
   Lightbulb,
   AlertCircle,
   CalendarIcon,
+  RotateCcw,
+  Sparkles,
+  Users,
 } from "lucide-react";
 import {
   AlertDialog,
@@ -34,24 +39,28 @@ interface DraftData {
   name: string
   idea: string
   deadline: string
-  projectType: ProjectTemplate
+  projectTemplate?: ProjectTemplate
+  projectType?: ProjectTemplate
   deliverables: string[]
-  createdBy: string
 }
 
 const DRAFT_KEY = "project-intake-draft"
 
 interface ProjectIntakeFormProps {
   workspaceId: string
-  defaultCreatedBy?: string
+  creatorUserId: string
   defaultProjectTemplate?: ProjectTemplate
-  onCreated?: (project: Project) => void
+  teamMembers?: Array<{ user_id: string; display_name: string }>
+  workspaceTeamSize?: number | null
+  onCreated?: (project: Project, nextStep: "open" | "clarify") => void
 }
 
 export function ProjectIntakeForm({
   workspaceId,
-  defaultCreatedBy,
+  creatorUserId,
   defaultProjectTemplate = "general",
+  teamMembers = [],
+  workspaceTeamSize,
   onCreated,
 }: ProjectIntakeFormProps) {
   const [resources, setResources] = React.useState<AddResourceRequest[]>([])
@@ -91,12 +100,12 @@ export function ProjectIntakeForm({
     } catch { /* ignore */ }
     return ""
   })
-  const [projectType, setProjectType] = React.useState<ProjectTemplate>(() => {
+  const [projectTemplate, setProjectTemplate] = React.useState<ProjectTemplate>(() => {
     try {
       const draft = localStorage.getItem(DRAFT_KEY)
       if (draft) {
         const data: DraftData = JSON.parse(draft)
-        return data.projectType || defaultProjectTemplate
+        return data.projectTemplate || data.projectType || defaultProjectTemplate
       }
     } catch { /* ignore */ }
     return defaultProjectTemplate
@@ -111,16 +120,9 @@ export function ProjectIntakeForm({
     } catch { /* ignore */ }
     return []
   })
-  const [createdBy, setCreatedBy] = React.useState(() => {
-    try {
-      const draft = localStorage.getItem(DRAFT_KEY)
-      if (draft) {
-        const data: DraftData = JSON.parse(draft)
-        return data.createdBy || defaultCreatedBy || ""
-      }
-    } catch { /* ignore */ }
-    return defaultCreatedBy || ""
-  })
+  const [createdProject, setCreatedProject] = React.useState<Project | null>(null)
+  const [failedResources, setFailedResources] = React.useState<AddResourceRequest[]>([])
+  const [retryingResources, setRetryingResources] = React.useState(false)
 
   // Auto-save draft
   React.useEffect(() => {
@@ -128,12 +130,11 @@ export function ProjectIntakeForm({
       name,
       idea,
       deadline,
-      projectType,
+      projectTemplate,
       deliverables: deliverableTags,
-      createdBy,
     }
     localStorage.setItem(DRAFT_KEY, JSON.stringify(draft))
-  }, [name, idea, deadline, projectType, deliverableTags, createdBy])
+  }, [name, idea, deadline, projectTemplate, deliverableTags])
 
   const validate = React.useCallback((): boolean => {
     const newErrors: Record<string, string> = {}
@@ -164,13 +165,9 @@ export function ProjectIntakeForm({
       }
     }
 
-    if (!createdBy.trim()) {
-      newErrors.createdBy = "请输入创建者 ID"
-    }
-
     setErrors(newErrors)
     return Object.keys(newErrors).length === 0
-  }, [name, idea, deadline, createdBy])
+  }, [name, idea, deadline])
 
   const validateField = React.useCallback((field: string, value: string) => {
     const newErrors: Record<string, string> = {}
@@ -204,9 +201,6 @@ export function ProjectIntakeForm({
         }
       }
     }
-    if (field === "createdBy" && !value.trim()) {
-      newErrors.createdBy = "请输入创建者 ID"
-    }
     setErrors((prev) => ({ ...prev, ...newErrors }))
   }, [])
 
@@ -227,9 +221,8 @@ export function ProjectIntakeForm({
     setName("");
     setIdea("");
     setDeadline("");
-    setProjectType(defaultProjectTemplate);
+    setProjectTemplate(defaultProjectTemplate);
     setDeliverableTags([]);
-    setCreatedBy(defaultCreatedBy || "");
     setErrors({});
     setError(null);
     setResources([]); // 确保资源也被清空
@@ -260,31 +253,94 @@ export function ProjectIntakeForm({
         idea: idea.trim(),
         deadline,
         deliverables: deliverablesStr,
-        project_template: projectType,
-        created_by: createdBy.trim(),
+        project_template: projectTemplate,
+        created_by: creatorUserId,
       })
       // Add resources if any
-      const failedResources: string[] = []
+      const failed: AddResourceRequest[] = []
       for (const res of resources) {
         try {
           await addResource(project.id, res)
         } catch (err) {
           console.error(`资源"${res.title || 'untitled'}"保存失败:`, err)
-          failedResources.push(res.title || "untitled")
+          failed.push(res)
         }
       }
-      if (failedResources.length > 0) {
-        setError(
-          `项目已创建，但 ${failedResources.length} 个资源保存失败: ${failedResources.join(", ")}`
-        )
-      }
       clearDraft()
-      onCreated?.(project)
+      setCreatedProject(project)
+      setFailedResources(failed)
     } catch {
       setError("创建项目失败，请重试")
     } finally {
       setSubmitting(false)
     }
+  }
+
+  const retryFailedResources = async () => {
+    if (!createdProject || failedResources.length === 0) return
+    setRetryingResources(true)
+    const stillFailed: AddResourceRequest[] = []
+    for (const resource of failedResources) {
+      try {
+        await addResource(createdProject.id, resource)
+      } catch {
+        stillFailed.push(resource)
+      }
+    }
+    setFailedResources(stillFailed)
+    setRetryingResources(false)
+  }
+
+  if (createdProject) {
+    return (
+      <div className="mx-auto max-w-2xl space-y-6 p-4" aria-live="polite">
+        <div className="flex items-start gap-3">
+          <CheckCircle2 className="mt-0.5 h-6 w-6 shrink-0 text-moss" aria-hidden="true" />
+          <div>
+            <h2 className="text-2xl font-bold text-ink">项目已创建</h2>
+            <p className="mt-1 text-sm text-ink/60">
+              {createdProject.name} 已保存。下一步生成方向卡，确认项目要解决的问题、边界和验证目标。
+            </p>
+          </div>
+        </div>
+
+        {failedResources.length > 0 && (
+          <div className="rounded-lg bg-destructive/5 px-4 py-3 text-sm text-ink" role="alert">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" aria-hidden="true" />
+              <div className="min-w-0">
+                <p className="font-semibold text-destructive">
+                  项目已创建，但有 {failedResources.length} 个资源尚未保存
+                </p>
+                <p className="mt-1 break-words text-ink/65">
+                  {failedResources.map((resource) => resource.title || "未命名资源").join("、")}
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button type="button" variant="outline" size="sm" onClick={retryFailedResources} disabled={retryingResources}>
+                    {retryingResources ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
+                    重试保存资源
+                  </Button>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => setFailedResources([])}>
+                    暂时跳过
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+          <Button type="button" variant="outline" onClick={() => onCreated?.(createdProject, "open")}>
+            先进入项目
+            <ArrowRight className="h-4 w-4" />
+          </Button>
+          <Button type="button" onClick={() => onCreated?.(createdProject, "clarify")}>
+            <Sparkles className="h-4 w-4" />
+            生成方向卡
+          </Button>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -362,23 +418,6 @@ export function ProjectIntakeForm({
               className={cn("resize-none", errors.idea && "border-destructive")}
             />
           </FormField>
-          {!defaultCreatedBy && (
-            <FormField label="创建者 ID" required error={errors.createdBy}>
-              <Input
-                value={createdBy}
-                onChange={(e) => {
-                  setCreatedBy(e.target.value)
-                  if (touched.createdBy) validateField("createdBy", e.target.value)
-                }}
-                onBlur={() => {
-                  setTouched((prev) => ({ ...prev, createdBy: true }))
-                  validateField("createdBy", createdBy)
-                }}
-                placeholder="选填，默认使用当前用户"
-                className={cn("h-10", errors.createdBy && "border-destructive")}
-              />
-            </FormField>
-          )}
         </FormSection>
 
         <FormSection title="项目详情">
@@ -386,12 +425,12 @@ export function ProjectIntakeForm({
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               {PROJECT_TEMPLATE_OPTIONS.map((type) => {
                 const Icon = type.icon
-                const isSelected = projectType === type.id
+                const isSelected = projectTemplate === type.id
                 return (
                   <button
                     key={type.id}
                     type="button"
-                    onClick={() => setProjectType(type.id)}
+                    onClick={() => setProjectTemplate(type.id)}
                     className={cn(
                       "flex flex-col items-center gap-2 rounded-lg border-2 p-4 transition-colors",
                       isSelected
@@ -406,6 +445,20 @@ export function ProjectIntakeForm({
               })}
             </div>
           </FormField>
+
+          <div className="flex items-start gap-3 rounded-lg bg-neutral-50 px-4 py-3 text-sm text-ink/70">
+            <Users className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
+            <div className="min-w-0">
+              <p className="font-medium text-ink">当前团队</p>
+              <p className="mt-0.5 break-words">
+                {teamMembers.length > 0
+                  ? `${teamMembers.length} 名成员：${teamMembers.map((member) => member.display_name).join("、")}`
+                  : workspaceTeamSize
+                    ? `工作区计划团队规模：${workspaceTeamSize} 人`
+                    : "成员信息将在工作区中统一管理，无需在项目中重复填写。"}
+              </p>
+            </div>
+          </div>
 
           <FormField label="预期交付物" hint="项目最终要产出什么">
             <TagInput
@@ -443,7 +496,7 @@ export function ProjectIntakeForm({
               !name.trim() ||
               !idea.trim() ||
               !deadline ||
-              !createdBy.trim()
+              !creatorUserId
             }
           >
             {submitting ? (

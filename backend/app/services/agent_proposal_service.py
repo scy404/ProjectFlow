@@ -356,15 +356,10 @@ def _persist_clarification(session: Session, proposal: AgentProposal) -> list[st
     project = require_row(session, Project, proposal.project_id, "Project")
     payload = _get_payload(proposal)
     output = DirectionCardOutput.model_validate(payload)
-    direction_card = {
-        "problem": output.problem,
-        "users": output.users,
-        "value": output.value,
-        "deliverables": output.deliverables,
-        "boundaries": output.boundaries,
-        "risks": output.risks,
-        "suggested_questions": output.suggested_questions,
-    }
+    direction_card = output.model_dump(
+        exclude={"requires_confirmation"},
+        exclude_none=True,
+    )
     project.direction_card = json.dumps(direction_card, ensure_ascii=False)
     project.updated_at = datetime.now(UTC)
     session.add(project)

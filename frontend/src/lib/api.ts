@@ -12,6 +12,7 @@ import type {
   UpsertMemberProfileRequest,
   Project,
   CreateProjectRequest,
+  UpdateProjectRequest,
   ProjectState,
   ProjectResource,
   AddResourceRequest,
@@ -46,6 +47,11 @@ const SIDECAR_BASE_URL = process.env.NEXT_PUBLIC_SIDECAR_BASE_URL ?? "http://loc
 
 type BackendUser = Omit<User, "user_id"> & { id: string; user_id?: string };
 type BackendWorkspace = Omit<Workspace, "workspace_id"> & { id: string; workspace_id?: string };
+type BackendProject = Omit<Project, "project_template" | "is_demo" | "direction_card"> & {
+  project_template?: Project["project_template"];
+  is_demo?: boolean;
+  direction_card?: Record<string, unknown> | null;
+};
 type BackendInvitation = Omit<Invitation, "invitation_id"> & { id: string; invitation_id?: string };
 type BackendWorkspaceMember = {
   user_id: string;
@@ -62,8 +68,10 @@ type BackendWorkspaceState = {
   members: BackendWorkspaceMember[];
 };
 type BackendRisk = Omit<Risk, "evidence"> & { evidence: unknown[] | Record<string, unknown> };
-type BackendProjectState = Omit<ProjectState, "workspace" | "members" | "risks"> & {
+type BackendProjectState = Omit<ProjectState, "workspace" | "project" | "projects" | "members" | "risks"> & {
   workspace: BackendWorkspace;
+  project: BackendProject;
+  projects: BackendProject[];
   members: BackendUser[];
   risks: BackendRisk[];
 };
@@ -106,6 +114,54 @@ function normalizeWorkspace(workspace: BackendWorkspace): Workspace {
   };
 }
 
+function stringList(value: unknown): string[] {
+  if (typeof value === "string") {
+    const normalized = value.trim();
+    return normalized ? [normalized] : [];
+  }
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    : [];
+}
+
+function normalizeDirectionCard(value: Record<string, unknown> | null | undefined): Project["direction_card"] {
+  if (!value) return null;
+  const boundary = value.mvp_boundary;
+  const normalizedBoundary = boundary && typeof boundary === "object"
+    ? {
+        must_have: stringList((boundary as Record<string, unknown>).must_have),
+        defer: stringList((boundary as Record<string, unknown>).defer),
+        out_of_scope: stringList((boundary as Record<string, unknown>).out_of_scope),
+      }
+    : undefined;
+  return {
+    problem: typeof value.problem === "string" ? value.problem : "",
+    users: typeof value.users === "string" ? value.users : "",
+    value: typeof value.value === "string" ? value.value : "",
+    deliverables: stringList(value.deliverables),
+    boundaries: stringList(value.boundaries),
+    risks: stringList(value.risks),
+    suggested_questions: stringList(value.suggested_questions),
+    source_summary: typeof value.source_summary === "string" ? value.source_summary : undefined,
+    assumptions: stringList(value.assumptions),
+    unknowns: stringList(value.unknowns),
+    mvp_boundary: normalizedBoundary,
+    decision_points: stringList(value.decision_points),
+    reason: typeof value.reason === "string" ? value.reason : undefined,
+    validation_hypotheses: stringList(value.validation_hypotheses),
+    success_signals: stringList(value.success_signals),
+  };
+}
+
+function normalizeProject(project: BackendProject): Project {
+  return {
+    ...project,
+    project_template: project.project_template ?? "general",
+    is_demo: project.is_demo ?? false,
+    direction_card: normalizeDirectionCard(project.direction_card),
+  };
+}
+
 function normalizeInvitation(invitation: BackendInvitation): Invitation {
   return {
     ...invitation,
@@ -145,6 +201,8 @@ function normalizeProjectState(state: BackendProjectState): ProjectState {
   return {
     ...state,
     workspace: normalizeWorkspace(state.workspace),
+    project: normalizeProject(state.project),
+    projects: state.projects.map(normalizeProject),
     members: state.members.map(normalizeUser),
     risks: state.risks.map(normalizeRisk),
   };
@@ -369,7 +427,7 @@ export async function createProject(
   workspaceId: string,
   data: CreateProjectRequest,
 ): Promise<Project> {
-  return request<Project>("/projects", {
+  const project = await request<BackendProject>("/projects", {
     method: "POST",
     body: JSON.stringify({
       workspace_id: workspaceId,
@@ -379,8 +437,21 @@ export async function createProject(
       deliverables: data.deliverables,
       project_template: data.project_template,
       created_by: data.created_by,
+      is_demo: data.is_demo ?? false,
     }),
   });
+  return normalizeProject(project);
+}
+
+export async function updateProject(
+  projectId: string,
+  data: UpdateProjectRequest,
+): Promise<Project> {
+  const project = await request<BackendProject>(`/projects/${projectId}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+  return normalizeProject(project);
 }
 
 export async function deleteProject(projectId: string): Promise<void> {
@@ -388,7 +459,7 @@ export async function deleteProject(projectId: string): Promise<void> {
 }
 
 export async function getProject(projectId: string): Promise<Project> {
-  return request<Project>(`/projects/${projectId}`);
+  return normalizeProject(await request<BackendProject>(`/projects/${projectId}`));
 }
 
 export async function getProjectState(projectId: string): Promise<ProjectState> {
@@ -473,7 +544,8 @@ async function getProjectStateFromSplitEndpoints(projectId: string): Promise<Pro
 }
 
 export async function listProjectsByWorkspace(workspaceId: string): Promise<Project[]> {
-  return request<Project[]>(`/workspaces/${workspaceId}/projects`, { timeout: 10_000 });
+  const projects = await request<BackendProject[]>(`/workspaces/${workspaceId}/projects`, { timeout: 10_000 });
+  return projects.map(normalizeProject);
 }
 
 // --- File Upload ---

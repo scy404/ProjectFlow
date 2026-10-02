@@ -139,12 +139,15 @@ def test_create_db_and_tables_preserves_legacy_projects_with_general_template(mo
     database.create_db_and_tables()
 
     columns = {col["name"] for col in inspect(legacy_engine).get_columns("projects")}
-    assert "project_template" in columns
+    assert {"project_template", "is_demo"} <= columns
+    indexes = {index["name"] for index in inspect(legacy_engine).get_indexes("projects")}
+    assert {"ix_projects_project_template", "ix_projects_is_demo"} <= indexes
     with legacy_engine.connect() as conn:
-        template = conn.execute(
-            text("SELECT project_template FROM projects WHERE id = 'legacy-project'")
-        ).scalar_one()
+        template, is_demo = conn.execute(
+            text("SELECT project_template, is_demo FROM projects WHERE id = 'legacy-project'")
+        ).one()
     assert template == "general"
+    assert is_demo in (0, False)
 
 
 def test_create_db_and_tables_adds_empty_evidence_refs_to_legacy_records(monkeypatch, tmp_path):

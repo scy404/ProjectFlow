@@ -103,6 +103,23 @@ function syncProjectShellState(nextState: ProjectState) {
   }
 }
 
+function syncWorkspaceShellState(nextState: WorkspaceState) {
+  setLastWorkspaceId(nextState.workspace.workspace_id);
+  setWorkspaceMembers(nextState.members.map((member) => ({
+    user_id: member.user_id,
+    display_name: member.display_name,
+  })));
+  if (typeof window === "undefined") return;
+  const storedUserId = localStorage.getItem("projectflow:current-user-id");
+  const memberIds = new Set(nextState.members.map((member) => member.user_id));
+  const validUserId = storedUserId && memberIds.has(storedUserId)
+    ? storedUserId
+    : memberIds.has(nextState.workspace.owner_user_id)
+      ? nextState.workspace.owner_user_id
+      : nextState.members[0]?.user_id;
+  if (validUserId && storedUserId !== validUserId) setCurrentUserId(validUserId);
+}
+
 export default function WorkspaceDashboardPage() {
   const params = useParams();
   const searchParams = useSearchParams();
@@ -117,7 +134,11 @@ export default function WorkspaceDashboardPage() {
   const storedUserId = useCurrentUserId();
   const currentUserId = projectState
     ? resolveValidCurrentUserId(projectState, storedUserId) ?? undefined
-    : undefined;
+    : workspaceState
+      ? (workspaceState.members.some((member) => member.user_id === storedUserId)
+          ? storedUserId ?? undefined
+          : workspaceState.workspace.owner_user_id)
+      : undefined;
   const [agentConversationSuggestions, setAgentConversationSuggestions] = useState<AgentSuggestion[]>([]);
   const [agentConversationArtifacts, setAgentConversationArtifacts] = useState<AgentArtifact[]>([]);
   const [pendingAgentInstruction, setPendingAgentInstruction] = useState<string | null>(null);
@@ -223,7 +244,7 @@ export default function WorkspaceDashboardPage() {
       .then((ws) => {
         if (ignore) return;
         setWorkspaceState(ws);
-        setLastWorkspaceId(workspaceId);
+        syncWorkspaceShellState(ws);
 
         const targetProjectId = projectParam ?? (ws.projects.length > 0 ? ws.projects[0].id : null);
         if (targetProjectId && !showWorkspaceRef.current) {
@@ -435,6 +456,35 @@ export default function WorkspaceDashboardPage() {
       reloadInProgressRef.current = false;
     }
   }, [selectedProjectId]);
+
+  const handleProjectCreated = useCallback(async (
+    projectId: string,
+    nextStep: "open" | "clarify",
+  ) => {
+    await handleSelectProject(projectId);
+    if (nextStep !== "clarify") return;
+    const actorId = currentUserId ?? workspaceState?.workspace.owner_user_id;
+    if (!actorId) {
+      setActionError("当前用户身份尚未初始化，无法生成方向卡。");
+      return;
+    }
+    setPendingAction("clarify");
+    setActionError(null);
+    setActionSuccess(null);
+    try {
+      const result = await runClarification(projectId, actorId) as AgentFlowResult;
+      await reloadProject(projectId);
+      if (result.status === "failed") {
+        setActionError("方向澄清失败，请在项目页重试。");
+      } else {
+        setActionSuccess("方向卡提案已生成，确认后才会写入项目。");
+      }
+    } catch {
+      setActionError("方向澄清失败，请在项目页重试。");
+    } finally {
+      setPendingAction(null);
+    }
+  }, [currentUserId, handleSelectProject, reloadProject, workspaceState?.workspace.owner_user_id]);
 
   const runAgent = async (action: AgentAction, thinkingLevel?: ThinkingLevel, model?: { provider: string; name: string }) => {
     if (!selectedProjectId) return;
@@ -914,6 +964,7 @@ export default function WorkspaceDashboardPage() {
       actionSuccess={actionSuccess}
       viewParam={viewParam}
       onSelectProject={handleSelectProject}
+      onProjectCreated={handleProjectCreated}
       onClearSelectedProject={() => {
         setSelectedProjectId(null);
         setProjectState(null);

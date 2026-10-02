@@ -308,6 +308,7 @@ def seed_demo_data(session: Session) -> dict:
         deadline="2026-07-17",
         deliverables="MVP demo, README, demo video, review summary",
         project_template="competition",
+        is_demo=True,
         status="active",
         current_stage_id=None,
         direction_card=direction_card,

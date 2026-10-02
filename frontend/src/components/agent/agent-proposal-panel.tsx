@@ -7,7 +7,10 @@ import { useInlineConfirm } from "@/lib/use-inline-confirm";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { DirectionDecisionView } from "@/components/agent/direction-decision-view";
+import {
+  DirectionDecisionView,
+  type DirectionDecisionContent,
+} from "@/components/agent/direction-decision-view";
 import type { AgentProposal, AgentEvent } from "@/lib/types";
 import { MultilineText } from "@/components/ui/multiline-text";
 import { translateStatus } from "@/lib/utils";
@@ -134,16 +137,7 @@ function ProposalContent({ proposal }: { proposal: AgentProposal }) {
   const payload = proposal.payload;
 
   if (proposal.proposal_type === "clarify") {
-    const p = payload as {
-      problem?: string;
-      users?: string;
-      value?: string;
-      deliverables?: string[];
-      boundaries?: string[];
-      risks?: string[];
-      suggested_questions?: string[];
-      reason?: string;
-    };
+    const p = payload as DirectionDecisionContent;
     return (
       <DirectionDecisionView content={p} compact />
     );

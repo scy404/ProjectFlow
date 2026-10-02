@@ -8,3 +8,4 @@ class EvidenceRef(BaseModel):
     entity_id: str | None = None
     field: str = Field(min_length=1)
     value: str = Field(min_length=1)
+    note: str | None = None

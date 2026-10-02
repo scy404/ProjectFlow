@@ -34,6 +34,7 @@ export function EvidenceRefList({ refs }: { refs?: EvidenceRef[] }) {
           <li key={`${ref.entity_type}-${ref.field}-${index}`} className="break-words text-xs text-ink/65">
             <span className="font-medium text-ink/75">{fieldLabel(ref.field)}：</span>
             {translateStatus(ref.value)}
+            {ref.note && <span className="text-ink/50">（{ref.note}）</span>}
           </li>
         ))}
       </ul>

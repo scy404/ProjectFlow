@@ -25,6 +25,8 @@ export type DirectionDecisionContent = {
   };
   decision_points?: string[];
   reason?: string;
+  validation_hypotheses?: string[];
+  success_signals?: string[];
 };
 
 type DirectionDecisionViewProps = {
@@ -58,6 +60,8 @@ export function DirectionDecisionView({ content, compact }: DirectionDecisionVie
   const mustHave = safeStringList(content.mvp_boundary?.must_have);
   const defer = safeStringList(content.mvp_boundary?.defer);
   const outOfScope = safeStringList(content.mvp_boundary?.out_of_scope);
+  const validationHypotheses = safeStringList(content.validation_hypotheses);
+  const successSignals = safeStringList(content.success_signals);
   const hasAudienceOrValue = Boolean(content.users || content.value);
   const hasConstraints = boundaries.length > 0 || risks.length > 0;
   const hasMvpBoundary = mustHave.length > 0 || defer.length > 0 || outOfScope.length > 0;
@@ -243,6 +247,40 @@ export function DirectionDecisionView({ content, compact }: DirectionDecisionVie
                   {decisionPoints.map((item) => (
                     <li key={item} className="flex gap-2">
                       <HelpCircle className="mt-1 h-3.5 w-3.5 shrink-0 text-moss/60" />
+                      <span>{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        </section>
+      )}
+
+      {(validationHypotheses.length > 0 || successSignals.length > 0) && (
+        <section className="space-y-4 rounded-lg bg-primary/5 px-4 py-4">
+          <SectionHeader icon={Crosshair} color="bg-primary/15 text-primary">验证方向</SectionHeader>
+          <div className="grid gap-4 sm:grid-cols-2">
+            {validationHypotheses.length > 0 && (
+              <div>
+                <p className="text-xs font-bold tracking-wider text-ink/60">要验证什么</p>
+                <ul className="mt-2 grid gap-2 text-sm leading-6 text-ink/80">
+                  {validationHypotheses.map((item) => (
+                    <li key={item} className="flex gap-2">
+                      <HelpCircle className="mt-1 h-3.5 w-3.5 shrink-0 text-primary" />
+                      <span>{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {successSignals.length > 0 && (
+              <div>
+                <p className="text-xs font-bold tracking-wider text-ink/60">什么现象代表有效</p>
+                <ul className="mt-2 grid gap-2 text-sm leading-6 text-ink/80">
+                  {successSignals.map((item) => (
+                    <li key={item} className="flex gap-2">
+                      <CheckCircle2 className="mt-1 h-3.5 w-3.5 shrink-0 text-moss" />
                       <span>{item}</span>
                     </li>
                   ))}

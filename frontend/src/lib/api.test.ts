@@ -15,6 +15,7 @@ import {
   runAssignment,
   sendAgentConversationMessage,
   startNegotiation,
+  updateProject,
 } from "./api";
 
 const jsonResponse = (body: unknown, status = 200) =>
@@ -28,6 +29,62 @@ afterEach(() => {
 });
 
 describe("frontend API layer", () => {
+  it("updates project metadata and normalizes the complete project contract", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(String(input)).toMatch(/\/projects\/project-1$/);
+      expect(init?.method).toBe("PATCH");
+      expect(JSON.parse(String(init?.body))).toEqual({
+        project_template: "startup",
+        is_demo: true,
+      });
+      return jsonResponse({
+        id: "project-1",
+        workspace_id: "workspace-1",
+        name: "创业项目",
+        idea: "验证项目字段",
+        deadline: "2027-01-01",
+        deliverables: "原型",
+        project_template: "startup",
+        is_demo: true,
+        status: "draft",
+        current_stage_id: null,
+        direction_card: {
+          problem: "验证问题",
+          users: "学生团队",
+          value: "降低不确定性",
+          deliverables: ["原型"],
+          boundaries: [],
+          risks: [],
+          suggested_questions: [],
+          validation_hypotheses: ["团队愿意持续更新状态"],
+          success_signals: ["连续两周有更新"],
+          mvp_boundary: {
+            must_have: "完整流程",
+            defer: "外部集成",
+            out_of_scope: "多 Agent",
+          },
+        },
+        created_by: "user-1",
+        created_at: "2026-10-02T00:00:00Z",
+        updated_at: "2026-10-02T00:00:00Z",
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const project = await updateProject("project-1", {
+      project_template: "startup",
+      is_demo: true,
+    });
+    expect(project.project_template).toBe("startup");
+    expect(project.is_demo).toBe(true);
+    expect(project.direction_card?.validation_hypotheses).toEqual(["团队愿意持续更新状态"]);
+    expect(project.direction_card?.mvp_boundary).toEqual({
+      must_have: ["完整流程"],
+      defer: ["外部集成"],
+      out_of_scope: ["多 Agent"],
+    });
+  });
+
   it("uses the single public review-summary export endpoint", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       expect(String(input)).toMatch(/\/projects\/project-1\/export\/review-summary$/);
@@ -690,6 +747,8 @@ describe("frontend API layer", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(state.workspace.workspace_id).toBe("workspace-1");
+    expect(state.project.project_template).toBe("general");
+    expect(state.project.is_demo).toBe(false);
     expect(state.members[0].user_id).toBe("user-1");
     expect(state.risks[0].evidence[0]).toEqual({
       "来源": "签到",

@@ -66,6 +66,7 @@ def test_evidence_refs_survive_create_list_state_and_agent_state(client: TestCli
             "entity_id": ids["task_id"],
             "field": "priority",
             "value": "P0",
+            "note": "来自当前任务优先级",
         }
     ]
 

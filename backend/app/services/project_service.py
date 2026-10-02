@@ -29,6 +29,7 @@ def create_project(session: Session, data: ProjectCreate) -> Project:
         deadline=data.deadline,
         deliverables=data.deliverables,
         project_template=data.project_template.value,
+        is_demo=data.is_demo,
         created_by=data.created_by,
     )
     session.add(project)
@@ -48,6 +49,9 @@ def list_projects_by_workspace(session: Session, workspace_id: str) -> list[Proj
 
 
 def _string_list(value: Any) -> list[str]:
+    if isinstance(value, str):
+        normalized = value.strip()
+        return [normalized] if normalized else []
     if not isinstance(value, list):
         return []
     return [item.strip() for item in value if isinstance(item, str) and item.strip()]
@@ -113,6 +117,10 @@ def normalize_direction_card(value: str | dict | None) -> dict | None:
         result["decision_points"] = _string_list(value.get("decision_points"))
     if value.get("reason"):
         result["reason"] = _first_text(value.get("reason"))
+    if "validation_hypotheses" in value:
+        result["validation_hypotheses"] = _string_list(value.get("validation_hypotheses"))
+    if "success_signals" in value:
+        result["success_signals"] = _string_list(value.get("success_signals"))
 
     return result
 
@@ -179,6 +187,8 @@ def update_project(session: Session, project_id: str, data: ProjectUpdate) -> Pr
         raise ValueError(f"Project {project_id} not found")
 
     update_data = data.model_dump(exclude_unset=True)
+    if "project_template" in update_data and update_data["project_template"] is not None:
+        update_data["project_template"] = update_data["project_template"].value
     if "direction_card" in update_data and update_data["direction_card"] is not None:
         if not isinstance(update_data["direction_card"], str):
             update_data["direction_card"] = json.dumps(
