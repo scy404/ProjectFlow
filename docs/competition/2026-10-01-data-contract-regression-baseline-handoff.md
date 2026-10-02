@@ -118,4 +118,8 @@
 
 ## 5. 推送记录
 
-提交与推送完成后补充 commit SHA 和远端分支；仅推送 fork `origin` 的同名新分支，不触碰 `main`。
+- 功能提交：`58899ca`（`feat(contract): establish phase 0 regression baseline`）。
+- 目标远端：`origin` = `https://github.com/scy404/ProjectFlow.git`。
+- 目标分支：`codex/data-contract-regression-baseline-20261001`。
+- 2026-10-02 首次推送失败：`Recv failure: Connection was reset`。
+- 第二次网络重试未获执行授权，当前提交仅保存在本地新分支；未修改或推送 `main`。
