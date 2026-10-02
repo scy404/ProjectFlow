@@ -105,5 +105,12 @@ Workspace 继续返回并保留 `team_size/project_template`。根据 2026-10-01
 ### 4.3 Git 状态
 
 - 工作分支：`codex/stage1-repair-domain-persistence-20261002`。
+- 功能提交：`9dda8a9 feat: repair stage 1 domain persistence chains`。
 - 未修改 `main`，未向 upstream 写入。
-- commit 与远端分支：待本地最终审计后填写。
+- 本文档提交：本条追溯补记所在提交。
+- 远端 fork 分支：待推送；若网络不可用，执行本文末尾命令即可。
+
+```powershell
+cd 'C:\Users\53506\Documents\ChatGPT\AI+\ProjectFlow-opc-project-type'
+git push -u origin codex/stage1-repair-domain-persistence-20261002
+```
