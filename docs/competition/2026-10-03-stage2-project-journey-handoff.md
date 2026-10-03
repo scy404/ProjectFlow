@@ -83,5 +83,5 @@
 
 ## 8. 提交信息
 
-- commit：提交后补充。
+- 实现 commit：`64b7868`（`feat: add data-driven project journey`）。
 - 远端：`origin/codex/stage2-project-journey-20261003`（推送后补充确认）。
