@@ -177,6 +177,17 @@ export function WorkspaceLayout({
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(false);
 
+  useEffect(() => {
+    const compactViewport = window.matchMedia("(max-width: 767px)");
+    const syncCompactLayout = (matches: boolean) => {
+      if (matches) setLeftCollapsed(true);
+    };
+    syncCompactLayout(compactViewport.matches);
+    const handleChange = (event: MediaQueryListEvent) => syncCompactLayout(event.matches);
+    compactViewport.addEventListener("change", handleChange);
+    return () => compactViewport.removeEventListener("change", handleChange);
+  }, []);
+
   const toggleLeft = useCallback(() => setLeftCollapsed((c) => !c), []);
   const toggleRight = useCallback(() => setRightCollapsed((c) => !c), []);
 

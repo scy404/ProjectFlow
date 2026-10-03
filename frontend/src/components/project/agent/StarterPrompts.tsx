@@ -36,6 +36,16 @@ const FOCUS_PROMPTS: Record<string, { label: string; hint: string; instruction: 
     { label: "分析当前风险", hint: "检查截止日期、依赖、工作量等潜在风险", instruction: "请执行 risk 模块：分析当前风险。" },
     { label: "查看项目整体进度", hint: "汇总完成情况和风险项", instruction: "帮我看一下项目整体进度，哪些任务完成了，哪些有风险。" },
   ],
+  复盘导出: [
+    { label: "生成项目复盘", hint: "总结真实进展与关键决策", instruction: "请基于当前项目中的任务、风险和时间线，生成项目复盘。" },
+    { label: "检查未解决风险", hint: "收尾前确认遗留项", instruction: "请检查当前仍未解决的风险，并说明是否会影响项目收尾。" },
+    { label: "说明导出内容", hint: "了解评审摘要的数据范围", instruction: "请说明项目评审导出会包含哪些数据库事实。" },
+  ],
+  项目录入: [
+    { label: "检查项目基础信息", hint: "确认目标与截止日期", instruction: "请检查当前项目基础信息是否足以开始方向澄清。" },
+    { label: "下一步做什么？", hint: "查看当前旅程建议", instruction: "请根据当前项目旅程告诉我下一步应该做什么。" },
+    { label: "说明项目旅程", hint: "了解六步推进方式", instruction: "请解释这个项目的六步旅程和当前所处位置。" },
+  ],
 };
 
 const FOCUS_DESCRIPTIONS: Record<string, string> = {
@@ -44,6 +54,8 @@ const FOCUS_DESCRIPTIONS: Record<string, string> = {
   任务拆解: "阶段计划确认后，需要把阶段目标拆成可分配、可检查的任务。",
   分工确认: "任务明确后，需要结合成员技能、时间和偏好生成并确认分工。",
   执行推进: "分工已确认，Agent 可以持续生成行动卡、分析风险并建议重排。",
+  复盘导出: "执行完成后，基于真实项目记录生成复盘与评审材料。",
+  项目录入: "检查项目基础信息后，即可开始方向澄清。",
 };
 
 export function StarterPrompts({ focus, onSelect, disabled }: StarterPromptsProps) {

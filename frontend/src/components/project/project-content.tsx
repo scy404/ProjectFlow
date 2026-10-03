@@ -47,6 +47,7 @@ import { ACTION_LABELS, inferRecommendedAction } from "./project-actions";
 import type { AgentAction } from "./project-actions";
 import type { ProjectView } from "./project-sidebar";
 import { PROJECT_TEMPLATE_LABELS } from "./project-template-options";
+import { ProjectJourneyBar } from "./project-journey-bar";
 
 const VIEW_META: Record<
   ProjectView,
@@ -351,6 +352,13 @@ function ViewRenderer({
               </div>
             </div>
           </section>
+
+          <ProjectJourneyBar
+            state={state}
+            pendingAction={pendingAction}
+            onNavigateView={onNavigateView}
+            onRunAgent={onRunAgent}
+          />
 
           {/* Next Action — promoted to top */}
           {(() => {

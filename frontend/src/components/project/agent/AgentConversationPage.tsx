@@ -45,6 +45,7 @@ import type {
   ModelConfigEntry,
 } from "@/lib/types";
 import { sendSteering, cancelRun } from "@/lib/api";
+import { inferJourneyAgentFocus } from "@/lib/project-journey";
 import {
   ChatMessage,
   StreamingText,
@@ -316,16 +317,7 @@ export function AgentConversationPage({
   const isRunning = !!activeRunId;
   const pendingProposalCount = state.agent_proposals?.filter((proposal) => proposal.status === "pending").length ?? 0;
 
-  const inferFocus = (state: ProjectState): string => {
-    if (!state.project?.direction_card) return "方向澄清";
-    if (!state.stages || state.stages.length === 0) return "阶段计划";
-    if (!state.tasks || state.tasks.length === 0) return "任务拆解";
-    const hasFinalized = state.assignment_proposals?.some((proposal) => proposal.status === "finalized");
-    if (!hasFinalized) return "分工确认";
-    return "执行推进";
-  };
-
-  const focus = conversation?.current_focus || inferFocus(state);
+  const focus = inferJourneyAgentFocus(state);
   const messages = useMemo(() => conversation?.messages ?? [], [conversation]);
 
   const timelineEntries = useMemo<ConversationTimelineEntry[]>(() => {
@@ -389,6 +381,8 @@ export function AgentConversationPage({
       任务拆解: ["把当前阶段拆成任务", "任务拆得更细一点", "优先保留 MVP 任务"],
       分工确认: ["根据成员情况推荐分工", "解释分工依据", "查看未确认分工"],
       执行推进: ["生成下一步行动卡", "分析当前风险", "根据签到调整计划"],
+      复盘导出: ["生成项目复盘", "检查未解决风险", "说明导出内容"],
+      项目录入: ["检查项目基础信息", "下一步做什么？", "说明项目旅程"],
     };
     return suggestions[focus] ?? ["下一步做什么？"];
   };
