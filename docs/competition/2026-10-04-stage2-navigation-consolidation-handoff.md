@@ -74,5 +74,5 @@
 
 ## 7. 提交信息
 
-- commit：提交后补充。
+- 实现 commit：`9aa3ee5`（`feat: consolidate project navigation`）。
 - 远端：`origin/codex/stage2-navigation-consolidation-20261004`（推送后确认）。
