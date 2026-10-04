@@ -5,54 +5,45 @@ import { motion, AnimatePresence } from "framer-motion";
 import { X, ChevronRight, ChevronLeft, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const TOUR_KEY = "projectflow-agent-tour-seen";
-
 interface TourStep {
   target: string;
   title: string;
   description: string;
-  position: "right" | "below" | "above";
+  position: "below" | "above";
 }
 
 const TOUR_STEPS: TourStep[] = [
   {
     target: "[data-tour='header']",
-    title: "Agent 助手",
-    description: "通过对话帮你推进项目。所有建议你确认后才会生效。",
-    position: "right",
+    title: "项目旅程",
+    description: "项目总览展示六步旅程；左侧导航按项目推进与复盘总结组织全部页面。",
+    position: "below",
+  },
+  {
+    target: "[data-tour='header']",
+    title: "收敛导航",
+    description: "两个导航分组可以独立展开，切换页面后仍会保留你已经展开的分组。",
+    position: "below",
   },
   {
     target: "[data-tour='context']",
-    title: "当前阶段",
-    description: "显示项目所处阶段和待确认事项。Agent 会根据阶段推荐下一步。",
-    position: "right",
+    title: "旅程上下文",
+    description: "Agent 会读取项目当前步骤、待确认事项和真实项目数据，再推荐下一步。",
+    position: "below",
   },
   {
     target: "[data-tour='prompts']",
-    title: "快速开始",
-    description: "点击即可让 Agent 执行特定操作，也可以自由输入消息。",
-    position: "right",
+    title: "先提案，再确认",
+    description: "Agent 的变更建议会先形成 Proposal，只有你确认后才会写入项目。",
+    position: "below",
   },
   {
     target: "[data-tour='composer']",
     title: "输入消息",
-    description: "Enter 发送，Shift+Enter 换行。试试点击上面的快速开始。",
+    description: "可以选择建议操作或直接输入需求；Enter 发送，Shift+Enter 换行。",
     position: "above",
   },
 ];
-
-function isTourSeen(): boolean {
-  if (typeof window === "undefined") return true;
-  return localStorage.getItem(TOUR_KEY) === "true";
-}
-
-function markTourSeen() {
-  try {
-    localStorage.setItem(TOUR_KEY, "true");
-  } catch {
-    // localStorage unavailable
-  }
-}
 
 interface AgentGuidedTourProps {
   active: boolean;
@@ -67,7 +58,6 @@ export function AgentGuidedTour({ active, onComplete }: AgentGuidedTourProps) {
     if (step < TOUR_STEPS.length - 1) {
       setStep((s) => s + 1);
     } else {
-      markTourSeen();
       onComplete();
     }
   }, [step, onComplete]);
@@ -77,7 +67,6 @@ export function AgentGuidedTour({ active, onComplete }: AgentGuidedTourProps) {
   }, [step]);
 
   const handleSkip = useCallback(() => {
-    markTourSeen();
     onComplete();
   }, [onComplete]);
 
@@ -88,16 +77,20 @@ export function AgentGuidedTour({ active, onComplete }: AgentGuidedTourProps) {
     if (!el) return;
     const current = TOUR_STEPS[step];
     const targetEl = document.querySelector(current.target);
-    if (!targetEl) return;
+    el.style.position = "absolute";
+    el.style.left = "8px";
+    el.style.right = "8px";
+    el.style.zIndex = "50";
+    if (!targetEl) {
+      el.style.top = "64px";
+      el.style.bottom = "";
+      return;
+    }
 
     const rect = targetEl.getBoundingClientRect();
     const sidebarRect = targetEl.closest("[data-tour-sidebar]")?.getBoundingClientRect();
 
     if (sidebarRect) {
-      el.style.position = "absolute";
-      el.style.left = "8px";
-      el.style.right = "8px";
-      el.style.zIndex = "50";
       if (current.position === "below") {
         el.style.top = `${rect.bottom - sidebarRect.top + 8}px`;
         el.style.bottom = "";
@@ -105,6 +98,9 @@ export function AgentGuidedTour({ active, onComplete }: AgentGuidedTourProps) {
         el.style.bottom = `${sidebarRect.bottom - rect.top + 8}px`;
         el.style.top = "";
       }
+    } else {
+      el.style.top = "64px";
+      el.style.bottom = "";
     }
   }, [active, step]);
 
@@ -133,7 +129,9 @@ export function AgentGuidedTour({ active, onComplete }: AgentGuidedTourProps) {
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: -4 }}
         transition={{ duration: 0.15 }}
-        className="rounded-md border border-neutral-200 bg-white p-3 shadow-lg"
+        role="dialog"
+        aria-label="ProjectFlow 使用引导"
+        className="max-w-sm rounded-md border border-neutral-200 bg-white p-3 shadow-lg dark:border-neutral-700 dark:bg-neutral-900"
       >
         <div className="flex items-start justify-between gap-2">
           <div className="flex items-center gap-1.5">
@@ -159,6 +157,7 @@ export function AgentGuidedTour({ active, onComplete }: AgentGuidedTourProps) {
                   "h-1 w-1 rounded-full",
                   i === step ? "bg-moss" : "bg-neutral-200",
                 )}
+                aria-hidden
               />
             ))}
           </div>
@@ -189,19 +188,14 @@ export function AgentGuidedTour({ active, onComplete }: AgentGuidedTourProps) {
 }
 
 export function useGuidedTour() {
-  const [active, setActive] = useState(false);
+  const [tourState, setTourState] = useState({ active: false, session: 0 });
 
-  useEffect(() => {
-    // Delay to let sidebar render
-    const timer = setTimeout(() => {
-      if (!isTourSeen()) {
-        setActive(true);
-      }
-    }, 500);
-    return () => clearTimeout(timer);
+  const start = useCallback(() => {
+    setTourState((current) => ({ active: true, session: current.session + 1 }));
+  }, []);
+  const complete = useCallback(() => {
+    setTourState((current) => ({ ...current, active: false }));
   }, []);
 
-  const complete = useCallback(() => setActive(false), []);
-
-  return { active, complete };
+  return { ...tourState, start, complete };
 }

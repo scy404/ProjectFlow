@@ -36,6 +36,7 @@ describe("project navigation information architecture", () => {
       ["my-tasks", "team-tasks", "checkin", "risks"],
     ]);
     expect(progress?.sections[1].weakDividerBefore).toBe(true);
+    expect(PROJECT_NAVIGATION_GROUPS.find((group) => group.id === "review")?.label).toBe("复盘总结");
   });
 
   it("maps direct routes to the group that must open", () => {

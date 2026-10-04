@@ -94,11 +94,11 @@ describe("ProjectSidebar grouped navigation", () => {
     expect(screen.getByRole("button", { name: "Agent 对话" })).not.toBeNull();
     expect(screen.getByRole("button", { name: "项目总览" })).not.toBeNull();
     expect(screen.getByRole("button", { name: /项目推进/ }).getAttribute("aria-expanded")).toBe("false");
-    expect(screen.getByRole("button", { name: /沉淀与评审/ }).getAttribute("aria-expanded")).toBe("false");
+    expect(screen.getByRole("button", { name: /复盘总结/ }).getAttribute("aria-expanded")).toBe("false");
     expect(screen.queryByRole("button", { name: "方向卡" })).toBeNull();
   });
 
-  it("uses mutually exclusive groups and preserves every legacy destination", () => {
+  it("keeps groups independently expanded and preserves every legacy destination", () => {
     renderSidebar();
 
     fireEvent.click(screen.getByRole("button", { name: /项目推进/ }));
@@ -109,9 +109,10 @@ describe("ProjectSidebar grouped navigation", () => {
     expect(screen.getByRole("button", { name: "签到与状态" })).not.toBeNull();
     expect(screen.getByRole("button", { name: "风险预警" })).not.toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: /沉淀与评审/ }));
-    expect(screen.getByRole("button", { name: /项目推进/ }).getAttribute("aria-expanded")).toBe("false");
-    expect(screen.getByRole("button", { name: /沉淀与评审/ }).getAttribute("aria-expanded")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: /复盘总结/ }));
+    expect(screen.getByRole("button", { name: /项目推进/ }).getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByRole("button", { name: /复盘总结/ }).getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByRole("button", { name: "方向卡" })).not.toBeNull();
     expect(screen.getByRole("button", { name: "项目记忆" })).not.toBeNull();
     expect(screen.getByRole("button", { name: "项目复盘" })).not.toBeNull();
   });
@@ -134,5 +135,17 @@ describe("ProjectSidebar grouped navigation", () => {
 
     rendered.rerender(<ProjectSidebar {...rendered.props} collapsed={false} />);
     expect(screen.getByRole("button", { name: "方向卡" })).not.toBeNull();
+  });
+
+  it("starts the guided tour only when the user asks for it", () => {
+    const startTour = vi.fn();
+    window.addEventListener("projectflow:start-guided-tour", startTour);
+    renderSidebar();
+
+    expect(startTour).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "使用引导" }));
+    expect(startTour).toHaveBeenCalledOnce();
+
+    window.removeEventListener("projectflow:start-guided-tour", startTour);
   });
 });

@@ -32,7 +32,7 @@ export const PROJECT_NAVIGATION_GROUPS = [
   },
   {
     id: "review",
-    label: "沉淀与评审",
+    label: "复盘总结",
     sections: [
       {
         id: "review-and-memory",

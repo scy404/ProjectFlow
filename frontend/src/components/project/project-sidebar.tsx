@@ -22,6 +22,7 @@ import {
   FolderOpen,
   Plus,
   Settings,
+  CircleHelp,
   Crown,
   BookOpen,
   Bot,
@@ -124,8 +125,8 @@ export function ProjectSidebar({
   const [newWorkspaceOpen, setNewWorkspaceOpen] = useState(false);
   const [navigationState, setNavigationState] = useState<{
     view: ProjectView;
-    openGroup: ProjectNavigationGroupId | null;
-  }>({ view: currentView, openGroup: currentGroup });
+    openGroups: ReadonlySet<ProjectNavigationGroupId>;
+  }>({ view: currentView, openGroups: new Set(currentGroup ? [currentGroup] : []) });
   const [allWorkspaces, setAllWorkspaces] = useState<Workspace[]>(() =>
     state.workspace ? [state.workspace] : []
   );
@@ -167,12 +168,13 @@ export function ProjectSidebar({
 
   const isExpanded = !collapsed || (hovered && !compactViewport);
   if (navigationState.view !== currentView) {
+    const nextOpenGroups = new Set(navigationState.openGroups);
+    if (currentGroup) nextOpenGroups.add(currentGroup);
     setNavigationState({
       view: currentView,
-      openGroup: currentGroup ?? navigationState.openGroup,
+      openGroups: nextOpenGroups,
     });
   }
-  const openGroup = navigationState.openGroup;
 
   const workspace = state.workspace ?? { workspace_id: "", name: "工作区", owner_user_id: "" };
   const otherProjects = state.projects?.filter((p) => p.id !== projectId) ?? [];
@@ -208,13 +210,18 @@ export function ProjectSidebar({
   const toggleNavigationGroup = (groupId: ProjectNavigationGroupId) => {
     if (!isExpanded) {
       onToggle();
-      setNavigationState((current) => ({ ...current, openGroup: groupId }));
+      setNavigationState((current) => ({
+        ...current,
+        openGroups: new Set(current.openGroups).add(groupId),
+      }));
       return;
     }
-    setNavigationState((current) => ({
-      ...current,
-      openGroup: current.openGroup === groupId ? null : groupId,
-    }));
+    setNavigationState((current) => {
+      const nextOpenGroups = new Set(current.openGroups);
+      if (nextOpenGroups.has(groupId)) nextOpenGroups.delete(groupId);
+      else nextOpenGroups.add(groupId);
+      return { ...current, openGroups: nextOpenGroups };
+    });
   };
 
   return (
@@ -477,7 +484,7 @@ export function ProjectSidebar({
         {!isExpanded && <div className="my-2 h-px bg-neutral-100 mx-2" />}
         <div className="space-y-1 px-1.5">
           {PROJECT_NAVIGATION_GROUPS.map((group) => {
-            const isOpen = isExpanded && openGroup === group.id;
+            const isOpen = isExpanded && navigationState.openGroups.has(group.id);
             const isCurrentGroup = currentGroup === group.id && !showWorkspace;
             const groupBadgeCount = group.id === "progress" ? progressBadgeCount : 0;
             return (
@@ -522,7 +529,7 @@ export function ProjectSidebar({
         </div>
       </nav>
 
-      {/* Footer: User switcher + Settings */}
+      {/* Footer: User switcher + Help + Settings */}
       <div className="border-t border-neutral-100 p-2 space-y-0.5">
         <DropdownMenu>
           <DropdownMenuTrigger
@@ -562,6 +569,32 @@ export function ProjectSidebar({
             ))}
           </DropdownMenuContent>
         </DropdownMenu>
+
+        <button
+          type="button"
+          onClick={() => window.dispatchEvent(new CustomEvent("projectflow:start-guided-tour"))}
+          disabled={showWorkspace || !projectId}
+          className={cn(
+            "flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs text-neutral-500 transition hover:bg-neutral-50 focus:outline-none focus:ring-2 focus:ring-moss/30 disabled:cursor-not-allowed disabled:opacity-40",
+            !isExpanded && "justify-center"
+          )}
+          title="使用引导"
+          aria-label="使用引导"
+        >
+          <CircleHelp className="h-4 w-4 shrink-0" aria-hidden />
+          <AnimatePresence>
+            {isExpanded && (
+              <motion.span
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="overflow-hidden whitespace-nowrap"
+              >
+                使用引导
+              </motion.span>
+            )}
+          </AnimatePresence>
+        </button>
 
         <button
           type="button"
