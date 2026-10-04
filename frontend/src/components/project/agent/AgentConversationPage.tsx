@@ -25,7 +25,6 @@ import {
   XCircle,
   ArrowDown,
   LockKeyhole,
-  CircleHelp,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -53,8 +52,6 @@ import {
   AgentStepIndicator,
   ChatComposer,
   StarterPrompts,
-  AgentGuidedTour,
-  useGuidedTour,
 } from "../agent";
 import type { AgentStreamStatus } from "../agent/AgentStepIndicator";
 import type { AgentAction } from "../project-actions";
@@ -259,18 +256,6 @@ export function AgentConversationPage({
   onRunAgent,
 }: AgentConversationPageProps) {
   const [historyOpen, setHistoryOpen] = useState(false);
-  const {
-    active: tourActive,
-    session: tourSession,
-    start: startTour,
-    complete: tourComplete,
-  } = useGuidedTour();
-
-  useEffect(() => {
-    const handleStartGuidedTour = () => startTour();
-    window.addEventListener("projectflow:start-guided-tour", handleStartGuidedTour);
-    return () => window.removeEventListener("projectflow:start-guided-tour", handleStartGuidedTour);
-  }, [startTour]);
   const [localThinkingLevel, setLocalThinkingLevel] = useState<ThinkingLevel | null>(null);
   const thinkingLevel = thinkingLevelProp !== undefined ? thinkingLevelProp : localThinkingLevel;
   const setThinkingLevel = onThinkingLevelChange !== undefined ? onThinkingLevelChange : setLocalThinkingLevel;
@@ -589,16 +574,9 @@ export function AgentConversationPage({
   }, [conversation?.id, messages.length, scrollToBottom]);
 
   return (
-    <div
-      data-tour-sidebar
-      className="relative flex h-full flex-col bg-[var(--color-bg-primary-token)]"
-    >
-      <AgentGuidedTour key={tourSession} active={tourActive} onComplete={tourComplete} />
+    <div className="flex h-full flex-col bg-[var(--color-bg-primary-token)]">
       {/* Top Header */}
-      <header
-        className="flex h-14 shrink-0 items-center justify-between border-b border-neutral-100 px-6 dark:border-neutral-800"
-        data-tour="header"
-      >
+      <header className="flex h-14 shrink-0 items-center justify-between border-b border-neutral-100 px-6 dark:border-neutral-800">
         <div className="flex items-center gap-2">
           <Bot className="h-5 w-5 text-neutral-600 dark:text-neutral-400" />
           <h1 className="text-sm font-semibold text-neutral-800 dark:text-neutral-200">Agent 交互对话</h1>
@@ -610,16 +588,6 @@ export function AgentConversationPage({
           )}
         </div>
         <div className="flex items-center gap-2">
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={startTour}
-            className="h-8 w-8 text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200"
-            title="使用引导"
-            aria-label="使用引导"
-          >
-            <CircleHelp className="h-4 w-4" />
-          </Button>
           {/* New Conversation Button */}
           <Button
             variant="outline"
@@ -720,17 +688,14 @@ export function AgentConversationPage({
             {/* Suggestions/Context Panel if empty */}
             {timelineEntries.length === 0 && !pendingConversationInstruction && (
               <div className="my-8 space-y-6">
-                <div
-                  className="rounded-xl border border-neutral-100 bg-neutral-50/50 p-6 text-center dark:border-neutral-800 dark:bg-neutral-900/50"
-                  data-tour="context"
-                >
+                <div className="rounded-xl border border-neutral-100 bg-neutral-50/50 p-6 text-center dark:border-neutral-800 dark:bg-neutral-900/50">
                   <Bot className="mx-auto mb-3 h-10 w-10 text-neutral-400" />
                   <h2 className="text-sm font-semibold text-neutral-800 dark:text-neutral-200">欢迎使用 Agent 推进台</h2>
                   <p className="mx-auto mt-1 max-w-md text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">
                     我是你的主动推进型 AI 助手。我会分析项目状态、阶段计划、执行进度和团队风险，帮助你的小队主动推进项目。所有操作在您确认后才会应用。
                   </p>
                 </div>
-                <div className="space-y-3" data-tour="prompts">
+                <div className="space-y-3">
                   <p className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wider">你可以尝试这样开始：</p>
                   <StarterPrompts
                     focus={focus}

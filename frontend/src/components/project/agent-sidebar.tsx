@@ -25,7 +25,6 @@ import {
   Users,
   XCircle,
   Maximize2,
-  CircleHelp,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -463,23 +462,7 @@ export function AgentSidebar({
   const [confirmedIds, setConfirmedIds] = useState<Set<string>>(new Set());
   const [actionLog, setActionLog] = useState<Array<{ id: string; artifactId: string; type: "confirmed" | "dismissed"; text: string }>>([]);
   const [steeringError, setSteeringError] = useState<string | null>(null);
-  const {
-    active: tourActive,
-    session: tourSession,
-    start: startTour,
-    complete: tourComplete,
-  } = useGuidedTour();
-
-  const startGuidedTour = useCallback(() => {
-    setCollapsed(false);
-    startTour();
-  }, [startTour]);
-
-  useEffect(() => {
-    const handleStartGuidedTour = () => startGuidedTour();
-    window.addEventListener("projectflow:start-guided-tour", handleStartGuidedTour);
-    return () => window.removeEventListener("projectflow:start-guided-tour", handleStartGuidedTour);
-  }, [startGuidedTour]);
+  const { active: tourActive, complete: tourComplete } = useGuidedTour();
 
   // 拖动调整宽度状态
   const [sidebarWidth, setSidebarWidth] = useState(() => {
@@ -844,11 +827,7 @@ export function AgentSidebar({
       style={!collapsed ? { width: `${sidebarWidth}px`, transition: isDragging ? "none" : "width 220ms cubic-bezier(0.23, 1, 0.32, 1)" } : undefined}
       initial={false}
     >
-      <AgentGuidedTour
-        key={tourSession}
-        active={tourActive && isExpanded && hasProject}
-        onComplete={tourComplete}
-      />
+      <AgentGuidedTour active={tourActive && isExpanded && hasProject} onComplete={tourComplete} />
       <button
         type="button"
         onClick={toggle}
@@ -898,16 +877,6 @@ export function AgentSidebar({
         {/* T45: Conversation history controls */}
         {isExpanded && hasProject && (
           <div className="ml-auto flex items-center gap-1">
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="h-8 w-8 shrink-0 text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200"
-              onClick={startGuidedTour}
-              title="使用引导"
-              aria-label="使用引导"
-            >
-              <CircleHelp className="h-4 w-4" />
-            </Button>
             <Button
               variant="ghost"
               size="icon-sm"

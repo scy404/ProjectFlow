@@ -1,5 +1,7 @@
 # 阶段 2 导航交互与手动引导 Handoff
 
+> 状态：部分撤销。提交 `dc87550` 中的导航交互调整继续保留；TODO 2.4 GuidedTour 改造已在后续分支 `codex/revert-stage2-guided-tour-20261004` 撤销。最终状态以 `2026-10-04-stage2-guided-tour-rollback-handoff.md` 为准。
+
 ## 1. 分支与基线
 
 - 实施日期：2026-10-04

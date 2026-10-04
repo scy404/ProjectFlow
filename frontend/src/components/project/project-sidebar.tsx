@@ -22,7 +22,6 @@ import {
   FolderOpen,
   Plus,
   Settings,
-  CircleHelp,
   Crown,
   BookOpen,
   Bot,
@@ -529,7 +528,7 @@ export function ProjectSidebar({
         </div>
       </nav>
 
-      {/* Footer: User switcher + Help + Settings */}
+      {/* Footer: User switcher + Settings */}
       <div className="border-t border-neutral-100 p-2 space-y-0.5">
         <DropdownMenu>
           <DropdownMenuTrigger
@@ -569,32 +568,6 @@ export function ProjectSidebar({
             ))}
           </DropdownMenuContent>
         </DropdownMenu>
-
-        <button
-          type="button"
-          onClick={() => window.dispatchEvent(new CustomEvent("projectflow:start-guided-tour"))}
-          disabled={showWorkspace || !projectId}
-          className={cn(
-            "flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs text-neutral-500 transition hover:bg-neutral-50 focus:outline-none focus:ring-2 focus:ring-moss/30 disabled:cursor-not-allowed disabled:opacity-40",
-            !isExpanded && "justify-center"
-          )}
-          title="使用引导"
-          aria-label="使用引导"
-        >
-          <CircleHelp className="h-4 w-4 shrink-0" aria-hidden />
-          <AnimatePresence>
-            {isExpanded && (
-              <motion.span
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="overflow-hidden whitespace-nowrap"
-              >
-                使用引导
-              </motion.span>
-            )}
-          </AnimatePresence>
-        </button>
 
         <button
           type="button"

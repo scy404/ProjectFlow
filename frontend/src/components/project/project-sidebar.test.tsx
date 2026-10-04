@@ -137,15 +137,4 @@ describe("ProjectSidebar grouped navigation", () => {
     expect(screen.getByRole("button", { name: "方向卡" })).not.toBeNull();
   });
 
-  it("starts the guided tour only when the user asks for it", () => {
-    const startTour = vi.fn();
-    window.addEventListener("projectflow:start-guided-tour", startTour);
-    renderSidebar();
-
-    expect(startTour).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "使用引导" }));
-    expect(startTour).toHaveBeenCalledOnce();
-
-    window.removeEventListener("projectflow:start-guided-tour", startTour);
-  });
 });
