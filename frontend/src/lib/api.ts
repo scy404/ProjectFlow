@@ -40,6 +40,8 @@ import type {
   StreamContentEvent,
   StreamToolEvent,
   RunActivityItem,
+  Task,
+  SubmitValidationResultRequest,
 } from "./types";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api";
@@ -68,12 +70,18 @@ type BackendWorkspaceState = {
   members: BackendWorkspaceMember[];
 };
 type BackendRisk = Omit<Risk, "evidence"> & { evidence: unknown[] | Record<string, unknown> };
-type BackendProjectState = Omit<ProjectState, "workspace" | "project" | "projects" | "members" | "risks"> & {
+type BackendTask = Omit<Task, "task_kind" | "validation_spec" | "validation_result"> & {
+  task_kind?: Task["task_kind"];
+  validation_spec?: Task["validation_spec"];
+  validation_result?: Task["validation_result"];
+};
+type BackendProjectState = Omit<ProjectState, "workspace" | "project" | "projects" | "members" | "risks" | "tasks"> & {
   workspace: BackendWorkspace;
   project: BackendProject;
   projects: BackendProject[];
   members: BackendUser[];
   risks: BackendRisk[];
+  tasks: BackendTask[];
 };
 type BackendAgentConversationTurn = Omit<AgentConversationTurn, "next_suggestions" | "suggestions" | "artifacts"> & {
   next_suggestions?: string[] | null;
@@ -197,6 +205,15 @@ function normalizeRisk(risk: BackendRisk): Risk {
   };
 }
 
+function normalizeTask(task: BackendTask): Task {
+  return {
+    ...task,
+    task_kind: task.task_kind ?? "delivery",
+    validation_spec: task.validation_spec ?? null,
+    validation_result: task.validation_result ?? null,
+  };
+}
+
 function normalizeProjectState(state: BackendProjectState): ProjectState {
   return {
     ...state,
@@ -205,6 +222,7 @@ function normalizeProjectState(state: BackendProjectState): ProjectState {
     projects: state.projects.map(normalizeProject),
     members: state.members.map(normalizeUser),
     risks: state.risks.map(normalizeRisk),
+    tasks: state.tasks.map(normalizeTask),
   };
 }
 
@@ -1391,7 +1409,7 @@ export async function updateTaskStatus(
   taskId: string,
   data: {
     user_id: string;
-    status: "not_started" | "in_progress" | "done" | "blocked";
+    status: "not_started" | "in_progress" | "done" | "blocked" | "cancelled";
     progress_note?: string;
     blocker?: string;
     available_hours_change?: number;
@@ -1408,6 +1426,21 @@ export async function updateTaskStatus(
       available_hours_change: data.available_hours_change,
     }),
   });
+}
+
+export async function submitValidationResult(
+  taskId: string,
+  viewerUserId: string,
+  data: SubmitValidationResultRequest,
+): Promise<Task> {
+  const task = await request<BackendTask>(
+    `/tasks/${encodeURIComponent(taskId)}/validation-result?viewer_user_id=${encodeURIComponent(viewerUserId)}`,
+    {
+      method: "PUT",
+      body: JSON.stringify(data),
+    },
+  );
+  return normalizeTask(task);
 }
 
 export async function updateActionCardStatus(

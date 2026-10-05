@@ -9,18 +9,22 @@ import {
   ChevronRight,
   Filter,
   FolderKanban,
+  FlaskConical,
+  Link2,
   ListTodo,
   MoreHorizontal,
   OctagonAlert,
   Play,
   UserCircle,
   XCircle,
+  RefreshCw,
 } from "lucide-react";
 
 import { AssignmentFlowPanel } from "@/components/assignment/assignment-flow-panel";
 import { CheckInForm } from "@/components/checkin/checkin-form";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -45,7 +49,7 @@ import { cn, cleanJsonString } from "@/lib/utils";
 import { MatchText } from "@/components/ui/match-text";
 import { MultilineText } from "@/components/ui/multiline-text";
 import { useInlineConfirm } from "@/lib/use-inline-confirm";
-import type { ProjectState, Task } from "@/lib/types";
+import type { ProjectResource, ProjectState, SubmitValidationResultRequest, Task } from "@/lib/types";
 import type { AgentAction } from "./project-actions";
 
 type AssignmentResponseHandler = (
@@ -79,11 +83,16 @@ type CheckinHandler = (data: {
 type TaskStatusHandler = (data: {
   task_id: string;
   user_id: string;
-  status: "not_started" | "in_progress" | "done" | "blocked";
+  status: "not_started" | "in_progress" | "done" | "blocked" | "cancelled";
   progress_note?: string;
   blocker?: string;
   available_hours_change?: number;
 }) => void;
+
+type ValidationResultHandler = (
+  taskId: string,
+  data: SubmitValidationResultRequest,
+) => void | Promise<void>;
 
 export function MyTasksView({
   tasks,
@@ -93,6 +102,9 @@ export function MyTasksView({
   onRespondToAssignment,
   onSubmitCheckin,
   onUpdateTaskStatus,
+  resources,
+  onSubmitValidationResult,
+  onReviewValidationImpact,
 }: {
   tasks: Task[];
   currentUserId?: string;
@@ -101,6 +113,9 @@ export function MyTasksView({
   onRespondToAssignment?: AssignmentResponseHandler;
   onSubmitCheckin?: CheckinHandler;
   onUpdateTaskStatus?: TaskStatusHandler;
+  resources: ProjectResource[];
+  onSubmitValidationResult?: ValidationResultHandler;
+  onReviewValidationImpact?: (task: Task) => void;
 }) {
   const myPending = tasks.filter(
     (t) => t.owner_user_id === currentUserId && t.status !== "done"
@@ -116,6 +131,7 @@ export function MyTasksView({
   const [showCheckinDialog, setShowCheckinDialog] = useState(false);
   const [showUpdateStatusDialog, setShowUpdateStatusDialog] = useState(false);
   const [selectedTaskIdForDialog, setSelectedTaskIdForDialog] = useState<string | null>(null);
+  const [validationTask, setValidationTask] = useState<Task | null>(null);
 
   const handleCheckinClick = (taskId: string) => {
     setSelectedTaskIdForDialog(taskId);
@@ -167,6 +183,9 @@ export function MyTasksView({
                 }
                 onCheckinClick={handleCheckinClick}
                 onUpdateStatusDetailsClick={handleUpdateStatusDetailsClick}
+                resources={resources}
+                onRecordValidation={onSubmitValidationResult ? setValidationTask : undefined}
+                onReviewValidationImpact={onReviewValidationImpact}
               />
             ))}
           </div>
@@ -273,6 +292,9 @@ export function MyTasksView({
                       key={task.id}
                       task={task}
                       onUpdateStatusDetailsClick={handleUpdateStatusDetailsClick}
+                      resources={resources}
+                      onRecordValidation={onSubmitValidationResult ? setValidationTask : undefined}
+                      onReviewValidationImpact={onReviewValidationImpact}
                     />
                   ))}
                 </div>
@@ -321,6 +343,19 @@ export function MyTasksView({
           )}
         </DialogContent>
       </Dialog>
+
+      <ValidationResultDialog
+        key={validationTask?.id ?? "my-validation-dialog"}
+        task={validationTask}
+        resources={resources}
+        open={Boolean(validationTask)}
+        onOpenChange={(open) => { if (!open) setValidationTask(null); }}
+        onSubmit={async (data) => {
+          if (!validationTask || !onSubmitValidationResult) return;
+          await onSubmitValidationResult(validationTask.id, data);
+          setValidationTask(null);
+        }}
+      />
     </div>
   );
 }
@@ -337,6 +372,9 @@ type TeamTasksViewProps = {
   onStartNegotiation?: NegotiationHandler;
   onResolveNegotiation?: ResolveNegotiationHandler;
   onFinalizeAssignments?: (stageId: string) => void;
+  resources: ProjectResource[];
+  onSubmitValidationResult?: ValidationResultHandler;
+  onReviewValidationImpact?: (task: Task) => void;
 };
 
 export function TeamTasksView({
@@ -350,6 +388,10 @@ export function TeamTasksView({
   onStartNegotiation,
   onResolveNegotiation,
   onFinalizeAssignments,
+  currentUserId,
+  resources,
+  onSubmitValidationResult,
+  onReviewValidationImpact,
 }: TeamTasksViewProps) {
   const activeStage = useMemo(
     () => stages.find((s) => s.status === "active") ?? stages[0],
@@ -358,6 +400,7 @@ export function TeamTasksView({
   const [filterStatus, setFilterStatus] = useState<Task["status"] | "all">("all");
   const [filterStage, setFilterStage] = useState<string>("all");
   const [groupBy, setGroupBy] = useState<"none" | "stage" | "owner">("stage");
+  const [validationTask, setValidationTask] = useState<Task | null>(null);
 
   // Resolve filter values back to display names for SelectTrigger
   const filterStatusLabel = useMemo(() => {
@@ -512,6 +555,9 @@ export function TeamTasksView({
                 task={task}
                 members={members}
                 showOwner
+                resources={resources}
+                onRecordValidation={currentUserId && onSubmitValidationResult ? setValidationTask : undefined}
+                onReviewValidationImpact={onReviewValidationImpact}
               />
             ))}
           </div>
@@ -538,6 +584,19 @@ export function TeamTasksView({
         onResolveNegotiation={onResolveNegotiation}
         onFinalizeAssignments={onFinalizeAssignments}
       />
+
+      <ValidationResultDialog
+        key={validationTask?.id ?? "team-validation-dialog"}
+        task={validationTask}
+        resources={resources}
+        open={Boolean(validationTask)}
+        onOpenChange={(open) => { if (!open) setValidationTask(null); }}
+        onSubmit={async (data) => {
+          if (!validationTask || !onSubmitValidationResult) return;
+          await onSubmitValidationResult(validationTask.id, data);
+          setValidationTask(null);
+        }}
+      />
     </div>
   );
 }
@@ -550,6 +609,9 @@ function TaskRow({
   onQuickUpdate,
   onCheckinClick,
   onUpdateStatusDetailsClick,
+  resources = [],
+  onRecordValidation,
+  onReviewValidationImpact,
 }: {
   task: Task;
   members?: ProjectState["members"];
@@ -558,6 +620,9 @@ function TaskRow({
   onQuickUpdate?: (status: Task["status"]) => void;
   onCheckinClick?: (taskId: string) => void;
   onUpdateStatusDetailsClick?: (taskId: string) => void;
+  resources?: ProjectResource[];
+  onRecordValidation?: (task: Task) => void;
+  onReviewValidationImpact?: (task: Task) => void;
 }) {
   const [updating, setUpdating] = useState(false);
   const [optimisticStatus, setOptimisticStatus] = useState<Task["status"] | null>(null);
@@ -580,6 +645,18 @@ function TaskRow({
   };
 
   const ownerName = members?.find((m) => m.user_id === task.owner_user_id)?.display_name;
+  const isValidationTask = task.task_kind === "validation";
+  const evidenceResources = resources.filter((resource) =>
+    task.validation_result?.evidence_resource_ids.includes(resource.id),
+  );
+  const decisionLabel = task.validation_result
+    ? {
+        validated: "假设成立",
+        adjust: "需要调整",
+        stop: "建议停止",
+        inconclusive: "暂无结论",
+      }[task.validation_result.decision]
+    : null;
 
   const handleQuickUpdate = async (status: Task["status"]) => {
     if (updating) return;
@@ -612,6 +689,12 @@ function TaskRow({
           <Badge variant="outline" className={cn("text-xs shrink-0", statusConfig[displayStatus].color)}>
             {statusConfig[displayStatus].label}
           </Badge>
+          {isValidationTask && (
+            <Badge className="shrink-0 border-violet-200 bg-violet-50 text-xs text-violet-700">
+              <FlaskConical className="mr-1 h-3 w-3" />
+              验证任务
+            </Badge>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-0.5">
           <span className="text-xs text-neutral-400">
@@ -624,6 +707,53 @@ function TaskRow({
             </span>
           )}
         </div>
+        {isValidationTask && task.validation_spec && (
+          <div className="mt-2 rounded-lg border border-violet-100 bg-violet-50/60 px-3 py-2 text-xs text-neutral-600">
+            <p><span className="font-medium text-neutral-700">验证假设：</span>{task.validation_spec.hypothesis}</p>
+            <p className="mt-1"><span className="font-medium text-neutral-700">方法：</span>{task.validation_spec.method}</p>
+            <p className="mt-1"><span className="font-medium text-neutral-700">成功标准：</span>{task.validation_spec.success_criterion}</p>
+            {task.validation_spec.sample_target && (
+              <p className="mt-1"><span className="font-medium text-neutral-700">样本目标：</span>{task.validation_spec.sample_target}</p>
+            )}
+          </div>
+        )}
+        {isValidationTask && (
+          <div className="mt-2 flex flex-wrap items-start justify-between gap-2 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-xs">
+            {task.validation_result ? (
+              <div className="min-w-0 flex-1 space-y-1 text-neutral-600">
+                <p className="font-medium text-neutral-800">{decisionLabel}</p>
+                <p>{task.validation_result.summary}</p>
+                <p><span className="font-medium">观察值：</span>{task.validation_result.observed_value}</p>
+                {evidenceResources.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-1 pt-1" aria-label="验证证据">
+                    <Link2 className="h-3 w-3 text-neutral-400" />
+                    {evidenceResources.map((resource) => (
+                      <span key={resource.id} className="rounded bg-neutral-100 px-1.5 py-0.5 text-neutral-600">
+                        {resource.title}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <p className="text-neutral-500">尚未提交验证结果，任务计划不会自动改变。</p>
+            )}
+            <div className="flex shrink-0 flex-wrap gap-1.5">
+              {onRecordValidation && (
+                <Button size="sm" variant="outline" onClick={() => onRecordValidation(task)}>
+                  <FlaskConical className="mr-1 h-3.5 w-3.5" />
+                  {task.validation_result ? "更新结果" : "填写结果"}
+                </Button>
+              )}
+              {task.validation_result && onReviewValidationImpact && (
+                <Button size="sm" variant="outline" onClick={() => onReviewValidationImpact(task)}>
+                  <RefreshCw className="mr-1 h-3.5 w-3.5" />
+                  查看 Agent 影响
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {showQuickActions && displayStatus !== "done" && (
@@ -641,7 +771,7 @@ function TaskRow({
               开始
             </button>
           )}
-          {confirmDone.confirming ? (
+          {isValidationTask && !task.validation_result ? null : confirmDone.confirming ? (
             <>
               <button
                 onClick={confirmDone.handleConfirm(() => handleQuickUpdate("done"))}
@@ -706,6 +836,132 @@ function TaskRow({
         </DropdownMenu>
       )}
     </div>
+  );
+}
+
+function ValidationResultDialog({
+  task,
+  resources,
+  open,
+  onOpenChange,
+  onSubmit,
+}: {
+  task: Task | null;
+  resources: ProjectResource[];
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSubmit: (data: SubmitValidationResultRequest) => void | Promise<void>;
+}) {
+  const existing = task?.validation_result;
+  const [summary, setSummary] = useState(existing?.summary ?? "");
+  const [observedValue, setObservedValue] = useState(existing?.observed_value ?? "");
+  const [decision, setDecision] = useState<SubmitValidationResultRequest["decision"]>(existing?.decision ?? "inconclusive");
+  const [evidenceIds, setEvidenceIds] = useState<string[]>(existing?.evidence_resource_ids ?? []);
+  const [markComplete, setMarkComplete] = useState(task?.status === "done");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const toggleEvidence = (resourceId: string, checked: boolean) => {
+    setEvidenceIds((current) => checked
+      ? Array.from(new Set([...current, resourceId]))
+      : current.filter((id) => id !== resourceId));
+  };
+
+  const handleSubmit = async () => {
+    if (!summary.trim() || !observedValue.trim()) {
+      setError("请填写结果摘要和观察值。");
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    try {
+      await onSubmit({
+        summary: summary.trim(),
+        observed_value: observedValue.trim(),
+        decision,
+        evidence_resource_ids: evidenceIds,
+        mark_complete: markComplete,
+      });
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : "验证结果提交失败，请重试。");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-xl">
+        <DialogHeader>
+          <DialogTitle>记录验证结果</DialogTitle>
+          <DialogDescription>
+            {task?.title ?? "验证任务"}。保存结果不会自动修改计划；如需调整，请再查看 Agent 建议并确认 Proposal。
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4 pt-2">
+          <label className="block space-y-1.5 text-sm font-medium text-neutral-700">
+            结果摘要
+            <textarea
+              value={summary}
+              onChange={(event) => setSummary(event.target.value)}
+              rows={3}
+              className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm font-normal outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/10"
+              placeholder="概括本次验证发现"
+            />
+          </label>
+          <label className="block space-y-1.5 text-sm font-medium text-neutral-700">
+            观察值
+            <textarea
+              value={observedValue}
+              onChange={(event) => setObservedValue(event.target.value)}
+              rows={2}
+              className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm font-normal outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/10"
+              placeholder="记录实际样本、反馈或测量结果"
+            />
+          </label>
+          <div className="space-y-1.5">
+            <p className="text-sm font-medium text-neutral-700">验证决策</p>
+            <Select value={decision} onValueChange={(value) => setDecision(value as SubmitValidationResultRequest["decision"])}>
+              <SelectTrigger aria-label="验证决策">
+                {{ validated: "假设成立", adjust: "需要调整", stop: "建议停止", inconclusive: "暂无结论" }[decision]}
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="validated">假设成立</SelectItem>
+                <SelectItem value="adjust">需要调整</SelectItem>
+                <SelectItem value="stop">建议停止</SelectItem>
+                <SelectItem value="inconclusive">暂无结论</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <fieldset className="space-y-2 rounded-lg border border-neutral-200 p-3">
+            <legend className="px-1 text-sm font-medium text-neutral-700">绑定项目资源作为证据（可选）</legend>
+            {resources.length > 0 ? resources.map((resource) => (
+              <Checkbox
+                key={resource.id}
+                checked={evidenceIds.includes(resource.id)}
+                onChange={(event) => toggleEvidence(resource.id, event.target.checked)}
+                label={resource.title}
+              />
+            )) : (
+              <p className="text-xs text-neutral-500">项目还没有可绑定的资源。</p>
+            )}
+          </fieldset>
+          <Checkbox
+            checked={markComplete}
+            onChange={(event) => setMarkComplete(event.target.checked)}
+            label="提交结果后将任务标记为完成"
+          />
+          {error && <p className="text-sm text-coral" role="alert">{error}</p>}
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>取消</Button>
+            <Button onClick={() => void handleSubmit()} disabled={submitting}>
+              {submitting ? "提交中…" : "保存验证结果"}
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 

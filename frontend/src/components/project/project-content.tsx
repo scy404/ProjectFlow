@@ -42,7 +42,7 @@ import { TaskStatusUpdateList } from "@/components/task/task-status-update";
 import { WorkspaceContent } from "./workspace-content";
 import { MyTasksView, TeamTasksView } from "./project-task-views";
 import { ProjectMemoryPanel } from "./project-memory-panel";
-import type { AddResourceRequest, ProjectState, ThinkingLevel } from "@/lib/types";
+import type { AddResourceRequest, ProjectState, SubmitValidationResultRequest, ThinkingLevel } from "@/lib/types";
 import { ACTION_LABELS, inferRecommendedAction } from "./project-actions";
 import type { AgentAction } from "./project-actions";
 import type { ProjectView } from "./project-sidebar";
@@ -142,7 +142,7 @@ interface ProjectContentProps {
   onUpdateTaskStatus?: (data: {
     task_id: string;
     user_id: string;
-    status: "not_started" | "in_progress" | "done" | "blocked";
+    status: "not_started" | "in_progress" | "done" | "blocked" | "cancelled";
     progress_note?: string;
     blocker?: string;
     available_hours_change?: number;
@@ -156,6 +156,7 @@ interface ProjectContentProps {
   onRejectProposal?: (proposalId: string, reason: string) => void;
   onAddResource?: (resource: AddResourceRequest) => void | Promise<void>;
   onDeleteResource?: (resourceId: string) => void | Promise<void>;
+  onSubmitValidationResult?: (taskId: string, data: SubmitValidationResultRequest) => void | Promise<void>;
 }
 
 export function ProjectContent(props: ProjectContentProps) {
@@ -253,6 +254,7 @@ function ViewRenderer({
   onRejectProposal,
   onAddResource,
   onDeleteResource,
+  onSubmitValidationResult,
 }: ProjectContentProps & { view: ProjectView }) {
   const { project, stages, tasks, action_cards, risks, timeline } = state;
   const currentStage =
@@ -609,6 +611,9 @@ function ViewRenderer({
           onRespondToAssignment={onRespondToAssignment}
           onSubmitCheckin={onSubmitCheckin}
           onUpdateTaskStatus={onUpdateTaskStatus}
+          resources={state.resources}
+          onSubmitValidationResult={onSubmitValidationResult}
+          onReviewValidationImpact={() => onRunAgent?.("replan")}
         />
       );
 
@@ -626,6 +631,9 @@ function ViewRenderer({
           onStartNegotiation={onStartNegotiation}
           onResolveNegotiation={onResolveNegotiation}
           onFinalizeAssignments={onFinalizeAssignments}
+          resources={state.resources}
+          onSubmitValidationResult={onSubmitValidationResult}
+          onReviewValidationImpact={() => onRunAgent?.("replan")}
         />
       );
 

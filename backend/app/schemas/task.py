@@ -1,8 +1,24 @@
 from datetime import date, datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.models.enums import TaskPriority, TaskStatus
+from app.models.enums import TaskKind, TaskPriority, TaskStatus, ValidationDecision
 from app.schemas.common import NonEmptyStr
+
+
+class ValidationSpec(BaseModel):
+    hypothesis: NonEmptyStr
+    method: NonEmptyStr
+    success_criterion: NonEmptyStr
+    sample_target: int | None = Field(default=None, ge=1)
+
+
+class ValidationResult(BaseModel):
+    summary: NonEmptyStr
+    observed_value: NonEmptyStr
+    decision: ValidationDecision
+    evidence_resource_ids: list[str] = Field(default_factory=list)
+    recorded_by: NonEmptyStr
+    recorded_at: datetime
 
 
 class TaskCreate(BaseModel):
@@ -15,6 +31,14 @@ class TaskCreate(BaseModel):
     estimated_hours: float = Field(default=0.0, ge=0)
     can_cut: bool = False
     order_index: int = 0
+    task_kind: TaskKind = TaskKind.delivery
+    validation_spec: ValidationSpec | None = None
+
+    @model_validator(mode="after")
+    def require_validation_spec(self) -> "TaskCreate":
+        if self.task_kind == TaskKind.validation and self.validation_spec is None:
+            raise ValueError("validation tasks require validation_spec")
+        return self
 
 
 class TaskUpdate(BaseModel):
@@ -24,6 +48,8 @@ class TaskUpdate(BaseModel):
     status: TaskStatus | None = None
     owner_user_id: NonEmptyStr | None = None
     can_cut: bool | None = None
+    task_kind: TaskKind | None = None
+    validation_spec: ValidationSpec | None = None
 
 
 class TaskRead(BaseModel):
@@ -40,11 +66,24 @@ class TaskRead(BaseModel):
     estimated_hours: float
     dependency_ids: list[str]
     acceptance_criteria: list[str]
+    task_kind: TaskKind = TaskKind.delivery
+    validation_spec: ValidationSpec | None = None
+    validation_result: ValidationResult | None = None
     can_cut: bool
     assignment_reason: str | None
     created_by_agent: bool
     order_index: int
     updated_at: datetime
+
+
+class ValidationResultSubmit(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    summary: NonEmptyStr
+    observed_value: NonEmptyStr
+    decision: ValidationDecision
+    evidence_resource_ids: list[NonEmptyStr] = Field(default_factory=list)
+    mark_complete: bool = False
 
 
 class TaskStatusUpdateCreate(BaseModel):

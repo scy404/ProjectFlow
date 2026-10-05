@@ -33,6 +33,7 @@ import {
   sendAgentConversationMessage,
   startNegotiation,
   submitCheckinResponse,
+  submitValidationResult,
   updateActionCardStatus,
   updateRiskStatus,
   updateTaskStatus,
@@ -46,6 +47,7 @@ import type {
   AgentStreamTurn,
   AgentSuggestion,
   ProjectState,
+  SubmitValidationResultRequest,
   WorkspaceState,
   ThinkingLevel,
 } from "@/lib/types";
@@ -849,7 +851,7 @@ export default function WorkspaceDashboardPage() {
   const handleUpdateTaskStatus = async (data: {
     task_id: string;
     user_id: string;
-    status: "not_started" | "in_progress" | "done" | "blocked";
+    status: "not_started" | "in_progress" | "done" | "blocked" | "cancelled";
     progress_note?: string;
     blocker?: string;
     available_hours_change?: number;
@@ -860,6 +862,23 @@ export default function WorkspaceDashboardPage() {
       await reloadProject();
     } catch {
       setActionError("任务状态更新失败，本地状态未变更。");
+    }
+  };
+
+  const handleSubmitValidationResult = async (taskId: string, data: SubmitValidationResultRequest) => {
+    if (!currentUserId) {
+      throw new Error("当前用户身份尚未初始化，请刷新后重试。");
+    }
+    setActionError(null);
+    setActionSuccess(null);
+    try {
+      await submitValidationResult(taskId, currentUserId, data);
+      await reloadProject();
+      setActionSuccess(data.mark_complete ? "验证结果已保存，任务已完成" : "验证结果已保存");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "验证结果提交失败。";
+      setActionError(message);
+      throw error;
     }
   };
 
@@ -979,6 +998,7 @@ export default function WorkspaceDashboardPage() {
       onFinalizeAssignments={handleFinalizeAssignments}
       onSubmitCheckin={handleSubmitCheckin}
       onUpdateTaskStatus={handleUpdateTaskStatus}
+      onSubmitValidationResult={handleSubmitValidationResult}
       onResolveRisk={(riskId) => handleRiskStatus(riskId, "resolved")}
       onAcceptRisk={(riskId) => handleRiskStatus(riskId, "accepted")}
       onIgnoreRisk={(riskId) => handleRiskStatus(riskId, "ignored")}

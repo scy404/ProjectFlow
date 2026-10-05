@@ -15,6 +15,7 @@ import {
   runAssignment,
   sendAgentConversationMessage,
   startNegotiation,
+  submitValidationResult,
   updateProject,
 } from "./api";
 
@@ -29,6 +30,66 @@ afterEach(() => {
 });
 
 describe("frontend API layer", () => {
+  it("submits validation results with session identity and normalizes the response", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(String(input)).toMatch(/\/tasks\/task-1\/validation-result\?viewer_user_id=user-1$/);
+      expect(init?.method).toBe("PUT");
+      expect(JSON.parse(String(init?.body))).toEqual({
+        summary: "需求成立",
+        observed_value: "8 人中 7 人愿意试用",
+        decision: "validated",
+        evidence_resource_ids: ["resource-1"],
+        mark_complete: true,
+      });
+      return jsonResponse({
+        id: "task-1",
+        project_id: "project-1",
+        stage_id: "stage-1",
+        title: "访谈用户",
+        description: "验证需求",
+        priority: "P0",
+        status: "done",
+        owner_user_id: "user-1",
+        backup_owner_user_id: null,
+        due_date: "2027-01-01",
+        estimated_hours: 3,
+        dependency_ids: [],
+        acceptance_criteria: [],
+        task_kind: "validation",
+        validation_spec: {
+          hypothesis: "用户愿意试用",
+          method: "访谈",
+          success_criterion: "至少 6 人愿意试用",
+          sample_target: 8,
+        },
+        validation_result: {
+          summary: "需求成立",
+          observed_value: "8 人中 7 人愿意试用",
+          decision: "validated",
+          evidence_resource_ids: ["resource-1"],
+          recorded_by: "user-1",
+          recorded_at: "2026-10-04T00:00:00Z",
+        },
+        can_cut: false,
+        assignment_reason: null,
+        created_by_agent: true,
+        order_index: 0,
+        updated_at: "2026-10-04T00:00:00Z",
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const task = await submitValidationResult("task-1", "user-1", {
+      summary: "需求成立",
+      observed_value: "8 人中 7 人愿意试用",
+      decision: "validated",
+      evidence_resource_ids: ["resource-1"],
+      mark_complete: true,
+    });
+    expect(task.task_kind).toBe("validation");
+    expect(task.validation_result?.recorded_by).toBe("user-1");
+  });
+
   it("updates project metadata and normalizes the complete project contract", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       expect(String(input)).toMatch(/\/projects\/project-1$/);

@@ -54,6 +54,18 @@ class TaskStatus(str, Enum):
     cancelled = "cancelled"
 
 
+class TaskKind(str, Enum):
+    delivery = "delivery"
+    validation = "validation"
+
+
+class ValidationDecision(str, Enum):
+    validated = "validated"
+    adjust = "adjust"
+    stop = "stop"
+    inconclusive = "inconclusive"
+
+
 class AssignmentProposalStatus(str, Enum):
     proposed = "proposed"
     owner_confirmed = "owner_confirmed"
@@ -138,6 +150,7 @@ class AgentEventType(str, Enum):
     replan = "replan"
     export = "export"
     retrospective = "retrospective"
+    validation = "validation"
 
 
 class AgentEventStatus(str, Enum):

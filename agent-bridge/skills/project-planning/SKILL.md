@@ -13,7 +13,7 @@ v2:
     - "制定计划"
     - "生成阶段计划"
     - "规划阶段"
-    - "按三周节奏生成阶段计划"
+    - "按当前截止日期生成阶段计划"
     - "规划接下来"
   negativeTriggers:
     - "计划延期了"
@@ -44,6 +44,7 @@ v2:
    - `stages`：每个阶段含 name/goal/start_date/end_date/deliverable/done_criteria/order_index/reason
    - `reason`：生成理由（如果已有阶段计划，说明改进点）
    - `requires_confirmation`: true
+   - 如果方向卡包含验证假设，在相应阶段的目标、交付物或完成标准中明确验证活动与决策点；后续任务拆解会同时生成验证任务和交付任务
 4. **必须调用** `generate_stage_plan_proposal`，将生成的阶段计划内容作为 `output` 参数传入。
    - 用户点击了此按钮，意味着他们想要生成或更新阶段计划
    - 即使项目已有阶段，也必须生成新提案（标注改进点）
@@ -54,6 +55,7 @@ v2:
 - 阶段时间范围使用 YYYY-MM-DD 格式
 - 每个阶段有明确的完成标准
 - 考虑团队成员可用时间和技能
+- 阶段数量和跨度由当前日期、截止日期、团队容量和完成标准推导；禁止使用固定“三周”等硬编码周期
 - 不直接修改项目状态
 - `output` 必须符合 StagePlanOutput schema（stages 必填，每个 stage 含 name/goal/start_date/end_date/deliverable/done_criteria）
 - ⚠️ **命名规则**：引用成员/阶段/任务时必须用「」包裹的显示名（如「小林」、「测试与打磨」），**禁止**出现任何原始 ID

@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 from app.models.enums import TaskStatus
 from app.schemas.action_card import ActionCardCreate
 from app.schemas.common import NonEmptyStr
+from app.schemas.evidence import EvidenceRef
 
 
 class ReplanStageAdjustment(BaseModel):
@@ -23,6 +24,7 @@ class ReplanTaskChange(BaseModel):
     due_date: date | None = None
     can_cut: bool | None = None
     reason: NonEmptyStr
+    evidence_refs: list[EvidenceRef] = Field(default_factory=list)
 
 
 class ReplanConfirmRequest(BaseModel):

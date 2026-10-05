@@ -1,6 +1,4 @@
-import json
-
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import Session
 
 from app.core.database import get_session
@@ -11,6 +9,7 @@ from app.schemas.task import (
     TaskRead,
     TaskStatusUpdateCreate,
     TaskStatusUpdateRead,
+    ValidationResultSubmit,
 )
 from app.services.task_service import (
     create_task,
@@ -19,6 +18,8 @@ from app.services.task_service import (
     list_tasks_by_project,
     update_task,
     create_status_update,
+    record_validation_result,
+    task_to_read,
 )
 
 router = APIRouter(tags=["tasks"])
@@ -26,27 +27,7 @@ router = APIRouter(tags=["tasks"])
 
 def _task_to_read(task: Task) -> TaskRead:
     """Convert a Task model to its read schema, deserializing JSON fields."""
-    from datetime import date as date_type
-    return TaskRead(
-        id=task.id,
-        project_id=task.project_id,
-        stage_id=task.stage_id,
-        title=task.title,
-        description=task.description,
-        priority=task.priority,
-        status=task.status,
-        owner_user_id=task.owner_user_id,
-        backup_owner_user_id=task.backup_owner_user_id,
-        due_date=task.due_date if isinstance(task.due_date, date_type) else task.due_date,
-        estimated_hours=task.estimated_hours,
-        dependency_ids=json.loads(task.dependency_ids) if task.dependency_ids else [],
-        acceptance_criteria=json.loads(task.acceptance_criteria) if task.acceptance_criteria else [],
-        can_cut=task.can_cut,
-        assignment_reason=task.assignment_reason,
-        created_by_agent=task.created_by_agent,
-        order_index=task.order_index,
-        updated_at=task.updated_at,
-    )
+    return task_to_read(task)
 
 
 @router.post("/tasks", response_model=TaskRead, status_code=201)
@@ -96,8 +77,30 @@ def api_update_task(
     try:
         task = update_task(session, task_id, data)
         return _task_to_read(task)
-    except ValueError:
-        raise HTTPException(status_code=404, detail="Task not found")
+    except ValueError as exc:
+        if "not found" in str(exc):
+            raise HTTPException(status_code=404, detail="Task not found") from exc
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.put("/tasks/{task_id}/validation-result", response_model=TaskRead)
+def api_record_validation_result(
+    task_id: str,
+    data: ValidationResultSubmit,
+    viewer_user_id: str = Query(..., min_length=1, description="当前会话用户 ID"),
+    session: Session = Depends(get_session),
+):
+    try:
+        return task_to_read(record_validation_result(
+            session,
+            task_id,
+            data,
+            viewer_user_id=viewer_user_id,
+        ))
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post(

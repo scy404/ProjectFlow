@@ -11,8 +11,10 @@ from app.models.enums import (
     RiskType,
     TaskPriority,
     TaskStatus,
+    TaskKind,
 )
 from app.schemas.evidence import EvidenceRef
+from app.schemas.task import ValidationSpec
 from app.agent.modules.common import (
     SKILL_NAME_CN_MAP,
     active_stage_id as resolve_active_stage_id,
@@ -101,9 +103,17 @@ class TaskBreakdownItem(BaseModel):
     estimated_hours: float = Field(ge=0)
     dependency_ids: list[str] = Field(default_factory=list)
     acceptance_criteria: list[str] = Field(default_factory=list)
+    task_kind: TaskKind = TaskKind.delivery
+    validation_spec: ValidationSpec | None = None
     can_cut: bool = False
     order_index: int = Field(default=0, ge=0, description="Sort order within the stage")
     reason: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def require_validation_spec(self) -> "TaskBreakdownItem":
+        if self.task_kind == TaskKind.validation and self.validation_spec is None:
+            raise ValueError("validation tasks require validation_spec")
+        return self
 
 
 class TaskBreakdownOutput(AgentOutputBase):

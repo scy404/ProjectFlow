@@ -73,7 +73,8 @@ Return 3 lean stages within the project deadline unless current state clearly ne
 SCOPE RULE: When the project idea is too ambitious for the team size or deadline, converge scope to MVP. Explicitly defer non-essential features. NEVER mention specific external systems (教务系统, 微信, 支付宝, 移动端 App, GitHub, 飞书, etc.) in ANY field — stage names, goals, deliverables, done_criteria, reason, or descriptions. Use generic terms like "外部集成" or "第三方服务" if needed. This rule applies everywhere: even when describing what the project wants to do or what you are deferring. Reject impossible timelines by proposing a reduced scope rather than accepting the full plan.""",
     AgentEventType.breakdown: """TaskBreakdownOutput JSON object:
 Required keys: "tasks" array, "reason" string, "requires_confirmation" true.
-Each task: "id" string (e.g. "task-1", "task-2"), "stage_id" existing stage id or null, "title" string, "description" string, "priority" one of P0/P1/P2, "due_date" YYYY-MM-DD, "estimated_hours" number, "dependency_ids" task id array, "acceptance_criteria" string[], "can_cut" boolean, "order_index" integer >=0, "reason" string.
+Each task: "id" string (e.g. "task-1", "task-2"), "stage_id" existing stage id or null, "title" string, "description" string, "priority" one of P0/P1/P2, "due_date" YYYY-MM-DD, "estimated_hours" number, "dependency_ids" task id array, "acceptance_criteria" string[], "task_kind" delivery|validation, optional "validation_spec" object, "can_cut" boolean, "order_index" integer >=0, "reason" string.
+For task_kind=validation, validation_spec is required with hypothesis, method, success_criterion, and optional sample_target. Delivery tasks omit validation_spec.
 Use only existing stage_id and dependency_ids from WorkspaceState. Assign order_index in execution order: 0 first, then 1, 2, etc.
 CRITICAL: If your reason describes a sequential order (e.g. "先...再...", "first...then..."), you MUST populate dependency_ids to reflect that order. Example: 3 tasks where backend must finish before frontend, and both must finish before integration test: [{"id":"task-1","title":"Backend","dependency_ids":[],"order_index":0}, {"id":"task-2","title":"Frontend","dependency_ids":["task-1"],"order_index":1}, {"id":"task-3","title":"Integration Test","dependency_ids":["task-1","task-2"],"order_index":2}]. Never describe ordering in text while leaving dependency_ids empty.""",
     AgentEventType.assign: """AssignmentRecommendationOutput JSON object:
@@ -217,6 +218,7 @@ def _compact_workspace_state_json(event_type: AgentEventType, workspace_state: W
         payload["project"] = {
             "name": project.name if include_project_brief else None,
             "idea": project.idea if include_project_brief else None,
+            "project_template": project.project_template,
             "deadline": project.deadline.isoformat(),
             "deliverables": project.deliverables if include_project_brief else None,
             "direction_card": direction_card,
@@ -256,6 +258,16 @@ def _compact_workspace_state_json(event_type: AgentEventType, workspace_state: W
                     } else None,
                     "acceptance_criteria": task.acceptance_criteria if event_type in {
                         AgentEventType.breakdown,
+                    } else None,
+                    "task_kind": task.task_kind,
+                    "validation_spec": task.validation_spec if event_type in {
+                        AgentEventType.breakdown,
+                        AgentEventType.risk,
+                        AgentEventType.replan,
+                    } else None,
+                    "validation_result": task.validation_result if event_type in {
+                        AgentEventType.risk,
+                        AgentEventType.replan,
                     } else None,
                     "can_cut": task.can_cut,
                     "assignment_reason": task.assignment_reason if event_type in {

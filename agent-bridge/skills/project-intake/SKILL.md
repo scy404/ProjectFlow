@@ -45,6 +45,10 @@ v2:
    - `boundaries`：范围边界
    - `risks`：已知风险
    - `suggested_questions`：澄清问题（**仅列出当前最紧迫的 2-3 个决策点**，不要列出泛泛的问题。每个问题应聚焦于：截止日期是否可行、某个关键成员是否有时间、MVP 范围是否要砍某个功能等）
+   - `assumptions`：当前方案成立所依赖、但尚未被项目事实证明的假设
+   - `unknowns`：会影响方向或计划、需要后续验证的未知信息
+   - `validation_hypotheses`：当 `project_template=competition` 且项目面向 OPC/创新创业验证，生成 1-3 条可检验假设
+   - `success_signals`：与验证假设一一对应的可观察成功信号，不使用无法从项目数据获得的宣传数字
    - `reason`：生成理由（如果已有方向卡，说明与旧版的差异和改进点）
    - `requires_confirmation`: true
 4. **必须调用** `generate_direction_card_proposal`，将生成的方向卡内容作为 `output` 参数传入。
@@ -60,5 +64,6 @@ v2:
 - 包含理由（reason）
 - 不能编造成员、任务、阶段
 - 不直接修改项目状态
+- `project_template=competition` 的 OPC 项目必须把关键 assumptions/unknowns 转成验证假设与成功信号；普通项目允许这些数组为空，不强行创业化
 - `output` 必须符合 DirectionCardOutput schema（problem/users/value/deliverables 必填）
 - ⚠️ **命名规则**：引用成员/任务/阶段时必须用「」包裹的显示名（如「小林」、「后端 API 与数据模型」），**禁止**出现任何原始 ID（user_xxx、task_xxx、demo-stage-004 等）
