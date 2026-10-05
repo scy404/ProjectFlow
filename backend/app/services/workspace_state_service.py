@@ -238,6 +238,7 @@ def get_workspace_state(
             project_template=project_row.project_template,
             is_demo=project_row.is_demo,
             direction_card=normalize_direction_card(project_row.direction_card),
+            direction_card=_json_object(project_row.direction_card),
             status=project_row.status if isinstance(project_row.status, str) else project_row.status.value,
             current_stage_id=project_row.current_stage_id,
             stages=stages, tasks=tasks,

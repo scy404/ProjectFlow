@@ -82,3 +82,13 @@
   ```
 
 - 预期：新分支远端 SHA 与本地 `HEAD` 一致；远端 `main` 仍为 `f374ec55ea3aa1d5f3c6ad64f2c3a98e8d966038`；工作区干净。
+
+## PR #2 合并状态审计（2026-10-05）
+
+- PR：`https://github.com/scy404/ProjectFlow/pull/2`
+- GitHub API 审计时返回：`mergeable=false`、`mergeable_state=dirty`。
+- PR base：`main` @ `f374ec55ea3aa1d5f3c6ad64f2c3a98e8d966038`。
+- 审计前 PR head：`codex/unify-project-types-demo-seed-20261001` @ `b69ce4f48606792254bd2b861eec869bec414958`。
+- 本地使用上述精确 SHA 执行三方合并检查，Git 返回 `Already up to date`；`git merge-base` 同样返回 base SHA，且 `git merge-base --is-ancestor` 成功。
+- 结论：base 是 head 的直接祖先，代码和文件层面不存在需要人工取舍的冲突；GitHub 的 `dirty` 与提交图不一致，属于陈旧的合并状态计算，而非真实内容冲突。
+- 处理方式：不制造无意义的冲突取舍或改写业务代码；通过本审计提交更新 PR head，触发 GitHub 重新计算 mergeability。
