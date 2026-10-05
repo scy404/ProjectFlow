@@ -20,7 +20,7 @@ type TaskStatusUpdateProps = {
   onUpdate: (data: {
     task_id: string;
     user_id: string;
-    status: "not_started" | "in_progress" | "done" | "blocked";
+    status: Task["status"];
     progress_note?: string;
     blocker?: string;
   }) => void | Promise<void>;

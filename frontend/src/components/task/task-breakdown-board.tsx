@@ -10,6 +10,7 @@ import {
   ChevronUp,
   Clock,
   GitBranch,
+  FlaskConical,
   Circle,
   Scissors,
 } from "lucide-react";
@@ -71,6 +72,8 @@ interface PendingTask {
   acceptance_criteria?: string[];
   can_cut?: boolean;
   reason?: string;
+  task_kind?: Task["task_kind"];
+  validation_spec?: Task["validation_spec"];
 }
 
 function parsePendingTasks(proposal: AgentProposal): PendingTask[] {
@@ -128,6 +131,30 @@ function TaskMetaRow({ task }: { task: Task }) {
           受阻
         </span>
       )}
+    </div>
+  );
+}
+
+function ValidationTaskDetails({ task }: { task: Task }) {
+  if (task.task_kind !== "validation") return null;
+  return (
+    <div className="mt-2 rounded-lg border border-violet-100 bg-violet-50/55 px-3 py-2 text-xs text-ink/65">
+      {task.validation_spec && (
+        <>
+          <p><span className="font-medium text-ink/80">验证假设：</span>{task.validation_spec.hypothesis}</p>
+          <p className="mt-1"><span className="font-medium text-ink/80">方法：</span>{task.validation_spec.method}</p>
+          <p className="mt-1"><span className="font-medium text-ink/80">成功标准：</span>{task.validation_spec.success_criterion}</p>
+          {task.validation_spec.sample_target && (
+            <p className="mt-1"><span className="font-medium text-ink/80">样本目标：</span>{task.validation_spec.sample_target}</p>
+          )}
+        </>
+      )}
+      <p className="mt-2 font-medium text-violet-700">
+        {task.validation_result
+          ? `验证结果：${{ validated: "假设成立", adjust: "需要调整", stop: "建议停止", inconclusive: "暂无结论" }[task.validation_result.decision]}`
+          : "尚未提交验证结果"}
+      </p>
+      {task.validation_result && <p className="mt-1">{task.validation_result.summary}</p>}
     </div>
   );
 }
@@ -240,6 +267,11 @@ export function TaskBreakdownBoard({ stages, tasks, pendingProposal }: TaskBreak
                   <Badge className={priorityClass(task.priority as Task["priority"])}>
                     {task.priority}
                   </Badge>
+                  {task.task_kind === "validation" && (
+                    <Badge className="bg-violet-50 text-violet-700">
+                      <FlaskConical className="mr-1 h-3 w-3" />验证任务
+                    </Badge>
+                  )}
                   <span className="text-sm font-semibold text-ink">{task.title}</span>
                 </div>
                 {task.description && (
@@ -327,6 +359,11 @@ export function TaskBreakdownBoard({ stages, tasks, pendingProposal }: TaskBreak
                               <Badge className={`text-[10px] ${statusClass(task.status)}`}>
                                 {statusLabel(task.status)}
                               </Badge>
+                              {task.task_kind === "validation" && (
+                                <Badge className="bg-violet-50 text-[10px] text-violet-700">
+                                  <FlaskConical className="mr-1 h-3 w-3" />验证任务
+                                </Badge>
+                              )}
                             </div>
 
                             {/* Content */}
@@ -342,6 +379,7 @@ export function TaskBreakdownBoard({ stages, tasks, pendingProposal }: TaskBreak
 
                           {/* Meta row */}
                           <TaskMetaRow task={task} />
+                          <ValidationTaskDetails task={task} />
 
                           {/* Dependencies detail (expandable feel — always collapsed) */}
                           {dependencies.length > 0 && (
@@ -445,6 +483,11 @@ export function TaskBreakdownBoard({ stages, tasks, pendingProposal }: TaskBreak
                       <Badge className={`text-[10px] ${statusClass(task.status)}`}>
                         {statusLabel(task.status)}
                       </Badge>
+                      {task.task_kind === "validation" && (
+                        <Badge className="bg-violet-50 text-[10px] text-violet-700">
+                          <FlaskConical className="mr-1 h-3 w-3" />验证任务
+                        </Badge>
+                      )}
                     </div>
                     <div className="min-w-0 flex-1">
                       <h4 className="text-sm font-semibold text-ink leading-snug">{task.title}</h4>
@@ -456,6 +499,7 @@ export function TaskBreakdownBoard({ stages, tasks, pendingProposal }: TaskBreak
                     </div>
                   </div>
                   <TaskMetaRow task={task} />
+                  <ValidationTaskDetails task={task} />
                   {dependencies.length > 0 && (
                     <p className="mt-1.5 text-[11px] text-ink/40">
                       依赖任务：{dependencies.join("、")}

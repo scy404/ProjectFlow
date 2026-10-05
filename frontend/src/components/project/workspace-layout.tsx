@@ -7,7 +7,7 @@ import { AgentSidebar } from "./agent-sidebar";
 import { ProjectContent } from "./project-content";
 import { WorkspaceContent } from "./workspace-content";
 import { AgentConversationPage } from "./agent/AgentConversationPage";
-import type { AddResourceRequest, AgentArtifact, AgentConversation, AgentConversationSummary, AgentStreamPhase, AgentStreamTurn, ArchivedAgentStreamTurn, AgentSuggestion, ProjectState, WorkspaceState, ThinkingLevel } from "@/lib/types";
+import type { AddResourceRequest, AgentArtifact, AgentConversation, AgentConversationSummary, AgentStreamPhase, AgentStreamTurn, ArchivedAgentStreamTurn, AgentSuggestion, ProjectState, SubmitValidationResultRequest, WorkspaceState, ThinkingLevel } from "@/lib/types";
 import type { AgentAction } from "./project-actions";
 
 interface WorkspaceLayoutProps {
@@ -68,7 +68,7 @@ interface WorkspaceLayoutProps {
   onUpdateTaskStatus?: (data: {
     task_id: string;
     user_id: string;
-    status: "not_started" | "in_progress" | "done" | "blocked";
+    status: "not_started" | "in_progress" | "done" | "blocked" | "cancelled";
     progress_note?: string;
     blocker?: string;
     available_hours_change?: number;
@@ -83,6 +83,7 @@ interface WorkspaceLayoutProps {
   onConfirmAgentArtifact?: (artifact: AgentArtifact) => void | Promise<void>;
   onAddResource?: (resource: AddResourceRequest) => void | Promise<void>;
   onDeleteResource?: (resourceId: string) => void | Promise<void>;
+  onSubmitValidationResult?: (taskId: string, data: SubmitValidationResultRequest) => void | Promise<void>;
   onRefresh?: () => void;
   completedAnnouncement?: string | null;
   // T45: Conversation history props
@@ -152,6 +153,7 @@ export function WorkspaceLayout({
   onConfirmAgentArtifact,
   onAddResource,
   onDeleteResource,
+  onSubmitValidationResult,
   onRefresh,
   completedAnnouncement,
   // T45: Conversation history
@@ -309,6 +311,7 @@ export function WorkspaceLayout({
             onRejectProposal={onRejectProposal}
             onAddResource={onAddResource}
             onDeleteResource={onDeleteResource}
+            onSubmitValidationResult={onSubmitValidationResult}
           />
         )}
       </motion.main>

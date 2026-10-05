@@ -39,13 +39,16 @@ v2:
    - 检查签到 — 有 blocker → **调用 `create_risk`**（type: checkin）
    - 检查阶段截止日期 — 临近且进度滞后 → **调用 `create_risk`**（type: deadline）
    - 检查成员可用时间 — 工时不足 → **调用 `create_risk`**（type: workload）
+   - 检查验证任务结果 — decision 为 adjust/stop/inconclusive 时，解释结果与原假设的关系，并在确有项目影响时调用 `create_risk`
    - **禁止**只输出文本分析而不调用工具——用户看不到纯文本，只有工具调用才能落库
-4. 每个风险必须有证据（evidence）和理由（title, description, recommendation）
+4. 每个风险必须有证据（evidence）和理由（title, description, recommendation）。验证结果触发的风险必须在 `evidence_refs` 引用对应 task；如结果绑定项目资源，再引用相应 resource
 
 ## 输出规范
 
 - 必须在分析后实际调用 `create_risk` 创建记录
 - 每个风险必须有证据（evidence）
+- 不把 inconclusive 自动解释为失败；建议补充样本或调整方法
+- 不自动修改计划
 - 风险严重程度根据实际情况判断
 - 只创建确实存在的风险，不编造
 - type 可选值: deadline / dependency / workload / scope / review / assignment / checkin

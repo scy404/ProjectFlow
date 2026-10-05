@@ -40,17 +40,20 @@ v2:
 
 1. 调用 `get_workspace_state` 读取当前工作区完整状态
 2. 调用 `get_timeline_slice` 读取近期事件
-3. 调用 `analyze_checkins_and_risks` 分析签到和风险（传入 checkin_analysis_output 和/或 risk_analysis_output），该工具会返回 replan_signal
-4. 如果 replan_signal.requires_replan_proposal 为 true，**必须调用** `generate_replan_proposal`：
+3. 检查验证任务结果；decision 为 adjust/stop/inconclusive 时，明确指出触发建议的验证任务和证据资源，不把结果直接应用为计划变更
+4. 调用 `analyze_checkins_and_risks` 分析签到、风险和验证信号（传入 checkin_analysis_output 和/或 risk_analysis_output），该工具会返回 replan_signal
+5. 如果 replan_signal.requires_replan_proposal 为 true，**必须调用** `generate_replan_proposal`：
    - before/after：变更前后对比
    - impact：影响描述
    - stage_adjustments/task_changes/action_cards：具体调整
    - reason/requires_confirmation: true
-5. 如果不需要重规划，在 observation 中说明原因后结束
-6. **禁止**只做文本分析不调用工具
+6. 如果不需要重规划，在 observation 中说明原因后结束
+7. **禁止**只做文本分析不调用工具
 
 ## 输出规范
 
 - 风险识别和记录创建请使用单独的**风险分析**功能
 - Replan 提案通过 generate_replan_proposal 提交，不直接修改 Task/Stage/Project
+- 验证结果只能形成风险或 replan Proposal；用户拒绝 Proposal 时原计划保持不变
+- Proposal 的 reason/impact 必须引用触发建议的验证任务标题；工具支持 `evidence_refs` 时同时提交 task/resource 引用
 - ⚠️ **命名规则**：所有文本字段中引用成员/任务/阶段时必须用「」包裹的显示名，**禁止**出现任何原始 ID

@@ -3,6 +3,8 @@ from datetime import date
 from pydantic import BaseModel, Field
 
 from app.models.enums import ProjectTemplate
+from app.schemas.evidence import EvidenceRef
+from app.schemas.task import ValidationResult, ValidationSpec
 
 
 class MemberState(BaseModel):
@@ -40,6 +42,9 @@ class TaskState(BaseModel):
     estimated_hours: float = 0.0
     dependency_ids: list[str] = Field(default_factory=list)
     acceptance_criteria: list[str] = Field(default_factory=list)
+    task_kind: str = "delivery"
+    validation_spec: ValidationSpec | None = None
+    validation_result: ValidationResult | None = None
     can_cut: bool
     assignment_reason: str | None = None
 
@@ -128,6 +133,7 @@ class WorkspaceStateResponse(BaseModel):
     workspace_name: str
     members: list[MemberState]
     project: ProjectState | None
+    project_template: ProjectTemplate = ProjectTemplate.general
     current_date: str = ""
     current_datetime: str = ""
     timezone: str = ""

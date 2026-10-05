@@ -18,6 +18,7 @@ from app.models import (
     ProjectResource,
 )
 from app.models.checkin import CheckInCycle, CheckInResponse
+from app.models.enums import ProjectTemplate
 from app.schemas.workspace_state import (
     MemberState,
     StageState,
@@ -145,6 +146,9 @@ def get_workspace_state(
             estimated_hours=t.estimated_hours,
             dependency_ids=_json_list(t.dependency_ids),
             acceptance_criteria=_json_list(t.acceptance_criteria),
+            task_kind=getattr(t, "task_kind", "delivery") or "delivery",
+            validation_spec=_json_object(getattr(t, "validation_spec", None)),
+            validation_result=_json_object(getattr(t, "validation_result", None)),
             can_cut=t.can_cut,
             assignment_reason=t.assignment_reason,
         ) for t in task_rows]
@@ -263,6 +267,9 @@ def get_workspace_state(
         workspace_name=workspace.name,
         members=members,
         project=project_state,
+        project_template=(
+            project_state.project_template if project_state else ProjectTemplate.general
+        ),
         current_date=now_local.strftime("%Y-%m-%d"),
         current_datetime=now_local.isoformat(),
         timezone=timezone_name,

@@ -2,6 +2,7 @@ import uuid
 from datetime import datetime, timezone
 
 from sqlmodel import SQLModel, Field
+from sqlalchemy import Column, Text
 
 
 class Task(SQLModel, table=True):
@@ -20,6 +21,9 @@ class Task(SQLModel, table=True):
     estimated_hours: float = Field(default=0.0)
     dependency_ids: str = Field(default="[]")  # JSON string: ["task_id1", ...]
     acceptance_criteria: str = Field(default="[]")  # JSON string: ["criterion1", ...]
+    task_kind: str = Field(default="delivery", index=True)
+    validation_spec: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    validation_result: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     can_cut: bool = Field(default=False)
     assignment_reason: str | None = Field(default=None)
     order_index: int = Field(default=0)

@@ -40,6 +40,7 @@ from app.schemas.task import TaskRead
 from app.schemas.user import UserRead
 from app.schemas.workspace import WorkspaceMembershipRead, WorkspaceRead
 from app.services.project_service import normalize_direction_card
+from app.services.task_service import task_to_read
 
 
 def _json_list(value: Any) -> list:
@@ -123,26 +124,7 @@ def _stage_to_read(stage: Stage) -> StageRead:
 
 
 def _task_to_read(task: Task) -> TaskRead:
-    return TaskRead(
-        id=task.id,
-        project_id=task.project_id,
-        stage_id=task.stage_id,
-        title=task.title,
-        description=task.description,
-        priority=task.priority,
-        status=task.status,
-        owner_user_id=task.owner_user_id,
-        backup_owner_user_id=task.backup_owner_user_id,
-        due_date=task.due_date,
-        estimated_hours=task.estimated_hours,
-        dependency_ids=_json_list(task.dependency_ids),
-        acceptance_criteria=_json_list(task.acceptance_criteria),
-        can_cut=task.can_cut,
-        assignment_reason=task.assignment_reason,
-        created_by_agent=task.created_by_agent,
-        order_index=task.order_index,
-        updated_at=task.updated_at,
-    )
+    return task_to_read(task)
 
 
 def _risk_to_read(risk: Risk) -> RiskRead:

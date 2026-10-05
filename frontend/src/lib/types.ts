@@ -187,18 +187,41 @@ export type Task = {
   title: string;
   description: string;
   priority: "P0" | "P1" | "P2";
-  status: "not_started" | "in_progress" | "done" | "blocked";
+  status: "not_started" | "in_progress" | "done" | "blocked" | "cancelled";
   owner_user_id?: string | null;
   backup_owner_user_id?: string | null;
   due_date: string;
   estimated_hours: number;
   dependency_ids: string[];
   acceptance_criteria: string[];
+  task_kind: "delivery" | "validation";
+  validation_spec?: {
+    hypothesis: string;
+    method: string;
+    success_criterion: string;
+    sample_target?: number | null;
+  } | null;
+  validation_result?: {
+    summary: string;
+    observed_value: string;
+    decision: "validated" | "adjust" | "stop" | "inconclusive";
+    evidence_resource_ids: string[];
+    recorded_by: string;
+    recorded_at: string;
+  } | null;
   can_cut: boolean;
   assignment_reason?: string | null;
   created_by_agent: boolean;
   order_index: number;
   updated_at: string;
+};
+
+export type SubmitValidationResultRequest = {
+  summary: string;
+  observed_value: string;
+  decision: "validated" | "adjust" | "stop" | "inconclusive";
+  evidence_resource_ids: string[];
+  mark_complete: boolean;
 };
 
 // --- Assignment ---

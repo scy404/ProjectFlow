@@ -60,6 +60,26 @@ def _migrate_tasks_order_index() -> None:
             conn.commit()
 
 
+def _migrate_task_validation_fields() -> None:
+    """Add validation-task fields while preserving historical delivery tasks."""
+    if not settings.database_url.startswith("sqlite"):
+        return
+    with engine.connect() as conn:
+        columns = _get_sqlite_columns("tasks")
+        if "task_kind" not in columns:
+            conn.execute(text(
+                "ALTER TABLE tasks ADD COLUMN task_kind TEXT NOT NULL DEFAULT 'delivery'"
+            ))
+        if "validation_spec" not in columns:
+            conn.execute(text("ALTER TABLE tasks ADD COLUMN validation_spec TEXT"))
+        if "validation_result" not in columns:
+            conn.execute(text("ALTER TABLE tasks ADD COLUMN validation_result TEXT"))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_tasks_task_kind ON tasks (task_kind)"
+        ))
+        conn.commit()
+
+
 def _migrate_workspaces() -> None:
     """Add workspace columns introduced after early demo databases were created."""
     if not settings.database_url.startswith("sqlite"):
@@ -247,6 +267,7 @@ def create_db_and_tables() -> None:
     SQLModel.metadata.create_all(engine)
     _migrate_agent_proposals()
     _migrate_tasks_order_index()
+    _migrate_task_validation_fields()
     _migrate_workspaces()
     _migrate_projects()
     _migrate_agent_runs_v2()

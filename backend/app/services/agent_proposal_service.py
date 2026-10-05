@@ -446,6 +446,11 @@ def _persist_task_breakdown(session: Session, proposal: AgentProposal) -> list[s
             estimated_hours=task_item.estimated_hours,
             dependency_ids=json.dumps(task_item.dependency_ids, ensure_ascii=False),
             acceptance_criteria=json.dumps(task_item.acceptance_criteria, ensure_ascii=False),
+            task_kind=task_item.task_kind.value,
+            validation_spec=(
+                json.dumps(task_item.validation_spec.model_dump(mode="json"), ensure_ascii=False)
+                if task_item.validation_spec else None
+            ),
             can_cut=task_item.can_cut,
             order_index=task_item.order_index,
             created_by_agent=True,
@@ -483,6 +488,7 @@ def _persist_replan(session: Session, proposal: AgentProposal) -> list[str]:
             due_date=tc.due_date,
             can_cut=tc.can_cut,
             reason=tc.reason,
+            evidence_refs=tc.evidence_refs,
         )
         for tc in output.task_changes
     ]
