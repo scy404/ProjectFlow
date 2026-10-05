@@ -3,7 +3,6 @@ from datetime import date
 from pydantic import BaseModel, Field
 
 from app.models.enums import ProjectTemplate
-from app.schemas.evidence import EvidenceRef
 
 
 class MemberState(BaseModel):
