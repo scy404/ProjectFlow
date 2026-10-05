@@ -39,18 +39,14 @@ import { MemberManagementDialog } from "@/components/member/member-management-di
 import { NewWorkspaceDialog } from "@/components/workspace/new-workspace-dialog";
 import { setCurrentUserId, clearLastWorkspaceId } from "@/components/app-shell";
 import { listWorkspaces } from "@/lib/api";
+import {
+  FIXED_PROJECT_VIEWS,
+  PROJECT_NAVIGATION_GROUPS,
+  getProjectNavigationGroup,
+} from "./project-navigation";
+import type { ProjectNavigationGroupId, ProjectView } from "./project-navigation";
 
-export type ProjectView =
-  | "agent"
-  | "overview"
-  | "direction"
-  | "stages"
-  | "my-tasks"
-  | "team-tasks"
-  | "checkin"
-  | "risks"
-  | "memory"
-  | "retro";
+export type { ProjectView } from "./project-navigation";
 
 const MENU_ITEMS: {
   id: ProjectView;
@@ -89,15 +85,6 @@ const MENU_ITEMS: {
   { id: "retro", label: "项目复盘", icon: BarChart3 },
 ];
 
-const OVERVIEW_GROUP: ProjectView[] = ["agent", "overview", "direction", "stages"];
-const EXECUTION_GROUP: ProjectView[] = [
-  "my-tasks",
-  "team-tasks",
-  "checkin",
-  "risks",
-  "memory",
-];
-
 interface ProjectSidebarProps {
   projectId: string;
   state: ProjectState;
@@ -129,10 +116,16 @@ export function ProjectSidebar({
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const currentView = (searchParams.get("view") as ProjectView) || "overview";
+  const currentGroup = getProjectNavigationGroup(currentView);
   const [hovered, setHovered] = useState(false);
+  const [compactViewport, setCompactViewport] = useState(false);
   const [memberMgmtOpen, setMemberMgmtOpen] = useState(false);
   const [workspaceExpanded, setWorkspaceExpanded] = useState(true);
   const [newWorkspaceOpen, setNewWorkspaceOpen] = useState(false);
+  const [navigationState, setNavigationState] = useState<{
+    view: ProjectView;
+    openGroups: ReadonlySet<ProjectNavigationGroupId>;
+  }>({ view: currentView, openGroups: new Set(currentGroup ? [currentGroup] : []) });
   const [allWorkspaces, setAllWorkspaces] = useState<Workspace[]>(() =>
     state.workspace ? [state.workspace] : []
   );
@@ -159,7 +152,28 @@ export function ProjectSidebar({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [onToggle]);
 
-  const isExpanded = !collapsed || hovered;
+  useEffect(() => {
+    if (typeof window.matchMedia !== "function") return;
+    const mediaQuery = window.matchMedia("(max-width: 767px)");
+    const syncViewport = (matches: boolean) => {
+      setCompactViewport(matches);
+      if (matches) setHovered(false);
+    };
+    syncViewport(mediaQuery.matches);
+    const handleChange = (event: MediaQueryListEvent) => syncViewport(event.matches);
+    mediaQuery.addEventListener("change", handleChange);
+    return () => mediaQuery.removeEventListener("change", handleChange);
+  }, []);
+
+  const isExpanded = !collapsed || (hovered && !compactViewport);
+  if (navigationState.view !== currentView) {
+    const nextOpenGroups = new Set(navigationState.openGroups);
+    if (currentGroup) nextOpenGroups.add(currentGroup);
+    setNavigationState({
+      view: currentView,
+      openGroups: nextOpenGroups,
+    });
+  }
 
   const workspace = state.workspace ?? { workspace_id: "", name: "工作区", owner_user_id: "" };
   const otherProjects = state.projects?.filter((p) => p.id !== projectId) ?? [];
@@ -188,6 +202,26 @@ export function ProjectSidebar({
     }
     return map;
   }, [state, currentUserId]);
+
+  const progressBadgeCount =
+    (badgeCounts.get("team-tasks") ?? 0) + (badgeCounts.get("risks") ?? 0);
+
+  const toggleNavigationGroup = (groupId: ProjectNavigationGroupId) => {
+    if (!isExpanded) {
+      onToggle();
+      setNavigationState((current) => ({
+        ...current,
+        openGroups: new Set(current.openGroups).add(groupId),
+      }));
+      return;
+    }
+    setNavigationState((current) => {
+      const nextOpenGroups = new Set(current.openGroups);
+      if (nextOpenGroups.has(groupId)) nextOpenGroups.delete(groupId);
+      else nextOpenGroups.add(groupId);
+      return { ...current, openGroups: nextOpenGroups };
+    });
+  };
 
   return (
     <motion.aside
@@ -425,9 +459,9 @@ export function ProjectSidebar({
         )}
         {!isExpanded && <div className="my-2 h-px bg-neutral-100 mx-2" />}
 
-        {/* Overview group */}
+        {/* Fixed primary destinations */}
         <ul className="space-y-0.5 px-1.5">
-          {MENU_ITEMS.filter((item) => OVERVIEW_GROUP.includes(item.id)).map(
+          {MENU_ITEMS.filter((item) => FIXED_PROJECT_VIEWS.some((view) => view === item.id)).map(
             (item) => (
               <MenuItem
                 key={item.id}
@@ -442,49 +476,56 @@ export function ProjectSidebar({
           )}
         </ul>
 
-        {/* Divider */}
+        {/* Grouped project destinations */}
         {isExpanded && (
           <div className="mx-4 my-2 border-t border-dashed border-neutral-200" />
         )}
         {!isExpanded && <div className="my-2 h-px bg-neutral-100 mx-2" />}
-
-        {/* Execution group */}
-        <ul className="space-y-0.5 px-1.5">
-          {MENU_ITEMS.filter((item) => EXECUTION_GROUP.includes(item.id)).map(
-            (item) => (
-              <MenuItem
-                key={item.id}
-                item={item}
-                isActive={currentView === item.id && !showWorkspace}
-                isExpanded={isExpanded}
-                onClick={() => handleNavigate(item.id)}
-                badgeCount={badgeCounts.get(item.id)}
-                disabled={showWorkspace}
-              />
-            )
-          )}
-        </ul>
-
-        {/* Divider */}
-        {isExpanded && (
-          <div className="mx-4 my-2 border-t border-dashed border-neutral-200" />
-        )}
-        {!isExpanded && <div className="my-2 h-px bg-neutral-100 mx-2" />}
-
-        {/* Retro group */}
-        <ul className="space-y-0.5 px-1.5">
-          {MENU_ITEMS.filter((item) => item.id === "retro").map((item) => (
-            <MenuItem
-              key={item.id}
-              item={item}
-              isActive={currentView === item.id && !showWorkspace}
-              isExpanded={isExpanded}
-              onClick={() => handleNavigate(item.id)}
-              badgeCount={item.badge?.(state, currentUserId)}
-              disabled={showWorkspace}
-            />
-          ))}
-        </ul>
+        <div className="space-y-1 px-1.5">
+          {PROJECT_NAVIGATION_GROUPS.map((group) => {
+            const isOpen = isExpanded && navigationState.openGroups.has(group.id);
+            const isCurrentGroup = currentGroup === group.id && !showWorkspace;
+            const groupBadgeCount = group.id === "progress" ? progressBadgeCount : 0;
+            return (
+              <div key={group.id}>
+                <NavigationGroupButton
+                  groupId={group.id}
+                  label={group.label}
+                  isExpanded={isExpanded}
+                  isOpen={isOpen}
+                  isCurrent={isCurrentGroup}
+                  badgeCount={groupBadgeCount}
+                  disabled={showWorkspace}
+                  onClick={() => toggleNavigationGroup(group.id)}
+                />
+                <AnimatePresence initial={false}>
+                  {isOpen && (
+                    <motion.ul
+                      id={`project-navigation-${group.id}`}
+                      initial={{ opacity: 0, y: -4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -4 }}
+                      transition={{ duration: 0.18, ease: [0.25, 1, 0.5, 1] }}
+                      className="ml-3 border-l border-neutral-200 pl-2 pt-1"
+                    >
+                      {group.sections.map((section) => (
+                        <NavigationSection
+                          key={section.id}
+                          views={section.views}
+                          weakDividerBefore={"weakDividerBefore" in section && section.weakDividerBefore}
+                          currentView={currentView}
+                          showWorkspace={showWorkspace}
+                          badgeCounts={badgeCounts}
+                          onNavigate={handleNavigate}
+                        />
+                      ))}
+                    </motion.ul>
+                  )}
+                </AnimatePresence>
+              </div>
+            );
+          })}
+        </div>
       </nav>
 
       {/* Footer: User switcher + Settings */}
@@ -578,6 +619,104 @@ export function ProjectSidebar({
         }}
       />
     </motion.aside>
+  );
+}
+
+function NavigationGroupButton({
+  groupId,
+  label,
+  isExpanded,
+  isOpen,
+  isCurrent,
+  badgeCount,
+  disabled,
+  onClick,
+}: {
+  groupId: ProjectNavigationGroupId;
+  label: string;
+  isExpanded: boolean;
+  isOpen: boolean;
+  isCurrent: boolean;
+  badgeCount: number;
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  const Icon = groupId === "progress" ? GitBranch : BookOpen;
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title={!isExpanded ? label : disabled ? "请先选择一个项目" : undefined}
+      aria-expanded={isExpanded ? isOpen : undefined}
+      aria-controls={`project-navigation-${groupId}`}
+      aria-label={`${isOpen ? "收起" : "展开"}${label}${badgeCount > 0 ? `，${badgeCount} 项待处理` : ""}`}
+      className={cn(
+        "flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-moss/30",
+        isCurrent
+          ? "bg-neutral-100/80 text-neutral-800"
+          : disabled
+            ? "cursor-not-allowed text-neutral-300 opacity-60"
+            : "text-neutral-500 hover:bg-neutral-50 hover:text-neutral-800",
+        !isExpanded && "justify-center px-0",
+      )}
+    >
+      <Icon className="h-4 w-4 shrink-0" aria-hidden />
+      {isExpanded && (
+        <>
+          <span className="min-w-0 flex-1 truncate text-left">{label}</span>
+          {badgeCount > 0 && (
+            <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-neutral-100 px-1 text-[10px] font-semibold text-neutral-500">
+              {badgeCount}
+            </span>
+          )}
+          <ChevronDown
+            className={cn("h-3.5 w-3.5 shrink-0 transition-transform duration-200", isOpen && "rotate-180")}
+            aria-hidden
+          />
+        </>
+      )}
+    </button>
+  );
+}
+
+function NavigationSection({
+  views,
+  weakDividerBefore,
+  currentView,
+  showWorkspace,
+  badgeCounts,
+  onNavigate,
+}: {
+  views: readonly ProjectView[];
+  weakDividerBefore: boolean;
+  currentView: ProjectView;
+  showWorkspace: boolean;
+  badgeCounts: Map<string, number>;
+  onNavigate: (view: ProjectView) => void;
+}) {
+  return (
+    <>
+      {weakDividerBefore && (
+        <li role="separator" className="mx-2 my-1.5 h-px bg-neutral-100" aria-hidden="true" />
+      )}
+      {views.map((view) => {
+        const item = MENU_ITEMS.find((candidate) => candidate.id === view);
+        if (!item) return null;
+        return (
+          <MenuItem
+            key={item.id}
+            item={item}
+            isActive={currentView === item.id && !showWorkspace}
+            isExpanded
+            onClick={() => onNavigate(item.id)}
+            badgeCount={badgeCounts.get(item.id)}
+            disabled={showWorkspace}
+          />
+        );
+      })}
+    </>
   );
 }
 
