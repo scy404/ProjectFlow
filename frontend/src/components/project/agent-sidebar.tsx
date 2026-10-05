@@ -34,6 +34,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/co
 import { cn } from "@/lib/utils";
 import type { AgentArtifact, AgentConversation, AgentConversationMessage, AgentConversationSummary, AgentSuggestion, AgentStreamTurn, ArchivedAgentStreamTurn, ProjectState, ThinkingLevel, ModelConfigEntry } from "@/lib/types";
 import { sendSteering, cancelRun } from "@/lib/api";
+import { inferJourneyAgentFocus } from "@/lib/project-journey";
 import {
   ChatMessage,
   StreamingText,
@@ -398,6 +399,17 @@ export function AgentSidebar({
   onNavigateView,
 }: AgentSidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
+
+  useEffect(() => {
+    const compactViewport = window.matchMedia("(max-width: 767px)");
+    const handleCompactViewport = (matches: boolean) => {
+      if (matches) setCollapsed(true);
+    };
+    handleCompactViewport(compactViewport.matches);
+    const handleChange = (event: MediaQueryListEvent) => handleCompactViewport(event.matches);
+    compactViewport.addEventListener("change", handleChange);
+    return () => compactViewport.removeEventListener("change", handleChange);
+  }, []);
   const [historyOpen, setHistoryOpen] = useState(false);
   /** Collapsible groups in conversation history — all expanded by default. */
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
@@ -597,7 +609,7 @@ export function AgentSidebar({
   const isExpanded = !collapsed;
   const isRunning = !!activeRunId;
   const pendingProposalCount = state.agent_proposals?.filter((proposal) => proposal.status === "pending").length ?? 0;
-  const focus = conversation?.current_focus || inferFocus(state);
+  const focus = inferJourneyAgentFocus(state);
   const messages = useMemo(() => conversation?.messages ?? [], [conversation]);
 
   // Reset older-messages collapse when conversation switches
@@ -1281,15 +1293,6 @@ function normalizeSuggestions(items: AgentSuggestion[] | string[]): AgentSuggest
   );
 }
 
-function inferFocus(state: ProjectState): string {
-  if (!state.project?.direction_card) return "方向澄清";
-  if (!state.stages || state.stages.length === 0) return "阶段计划";
-  if (!state.tasks || state.tasks.length === 0) return "任务拆解";
-  const hasFinalized = state.assignment_proposals?.some((proposal) => proposal.status === "finalized");
-  if (!hasFinalized) return "分工确认";
-  return "执行推进";
-}
-
 function inferSuggestions(focus: string): string[] {
   const suggestions: Record<string, string[]> = {
     方向澄清: ["先帮我澄清方向", "根据资料生成方向卡", "为什么要先澄清方向？"],
@@ -1297,6 +1300,8 @@ function inferSuggestions(focus: string): string[] {
     任务拆解: ["把当前阶段拆成任务", "任务拆得更细一点", "优先保留 MVP 任务"],
     分工确认: ["根据成员情况推荐分工", "解释分工依据", "查看未确认分工"],
     执行推进: ["生成下一步行动卡", "分析当前风险", "根据签到调整计划"],
+    复盘导出: ["生成项目复盘", "检查未解决风险", "说明导出内容"],
+    项目录入: ["检查项目基础信息", "下一步做什么？", "说明项目旅程"],
   };
   return suggestions[focus] ?? ["下一步做什么？"];
 }
@@ -1316,6 +1321,8 @@ const FOCUS_ICON_MAP: Record<string, ElementType> = {
   任务拆解: ListTodo,
   分工确认: Users,
   执行推进: Rocket,
+  复盘导出: ClipboardCheck,
+  项目录入: Compass,
 };
 
 function CollapsedSidebarIcons({
