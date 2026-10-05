@@ -40,7 +40,6 @@ interface DraftData {
   idea: string
   deadline: string
   projectTemplate?: ProjectTemplate
-  projectType?: ProjectTemplate
   deliverables: string[]
 }
 
@@ -105,7 +104,7 @@ export function ProjectIntakeForm({
       const draft = localStorage.getItem(DRAFT_KEY)
       if (draft) {
         const data: DraftData = JSON.parse(draft)
-        return data.projectTemplate || data.projectType || defaultProjectTemplate
+        return data.projectTemplate || defaultProjectTemplate
       }
     } catch { /* ignore */ }
     return defaultProjectTemplate

@@ -75,7 +75,7 @@ export function ProjectResourcesPanel({
     <section className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm">
       <div>
         <h2 className="text-lg font-bold text-ink">项目资源</h2>
-        <p className="mt-1 text-sm text-ink/60">训练营要求、文档链接和当前约束</p>
+        <p className="mt-1 text-sm text-ink/60">项目要求、参考文档和当前约束</p>
       </div>
 
       {resources.length === 0 ? (

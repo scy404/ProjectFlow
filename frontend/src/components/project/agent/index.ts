@@ -6,4 +6,3 @@ export { ModuleRunCard } from "./ModuleRunCard";
 export { ChatComposer } from "./ChatComposer";
 export { StarterPrompts } from "./StarterPrompts";
 export { MessageActions } from "./MessageActions";
-export { AgentGuidedTour, useGuidedTour } from "./AgentGuidedTour";

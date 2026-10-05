@@ -539,7 +539,7 @@ class TestInternalAgentTools:
                 {
                     "project_id": project["id"],
                     "workspace_id": workspace["id"],
-                    "user_instruction": "按三周节奏生成阶段计划。",
+                    "user_instruction": "根据截止日期、交付物和团队容量生成阶段计划。",
                     "output": _STAGE_PLAN_OUTPUT,
                 },
             ),

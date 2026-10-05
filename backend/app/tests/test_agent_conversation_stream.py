@@ -520,7 +520,7 @@ class TestExtractSkillName:
         assert _extract_skill_name("根据签到调整计划") == "risk-replan"
         assert _extract_skill_name("根据成员情况推荐分工") == "assignment-planning"
         assert _extract_skill_name("把当前阶段拆成任务") == "task-breakdown"
-        assert _extract_skill_name("按三周节奏生成阶段计划") == "project-planning"
+        assert _extract_skill_name("根据项目约束生成阶段计划") == "project-planning"
         assert _extract_skill_name("先帮我澄清方向") == "project-intake"
 
     # ── Expanded quick-reply instructions (precedence 2) ────────────────
@@ -530,7 +530,7 @@ class TestExtractSkillName:
 
         assert _extract_skill_name("请执行 risk 模块：分析当前风险。用户点击了快捷回复") == "risk-analysis"
         assert _extract_skill_name("请执行 replan 模块：根据签到结果调整项目计划") == "risk-replan"
-        assert _extract_skill_name("请执行 plan 模块：按三周节奏生成阶段计划") == "project-planning"
+        assert _extract_skill_name("请执行 plan 模块：根据项目约束生成阶段计划") == "project-planning"
         assert _extract_skill_name("请执行 breakdown 模块：把当前阶段拆成可执行任务") == "task-breakdown"
         assert _extract_skill_name("请执行 assign 模块：根据成员情况推荐分工") == "assignment-planning"
         assert _extract_skill_name("请执行 clarify 模块：澄清项目方向") == "project-intake"

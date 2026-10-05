@@ -181,6 +181,18 @@ const artifactsFixture: AgentArtifact[] = [
 // ---------------------------------------------------------------------------
 
 describe("AgentSidebar", () => {
+  it("does not interrupt first entry with an automatic guided tour", () => {
+    render(
+      <AgentSidebar
+        state={baseProjectState}
+        conversation={conversationFixture}
+        onRunAgent={vi.fn()}
+      />
+    );
+
+    expect(screen.queryByRole("button", { name: "跳过引导" })).toBeNull();
+  });
+
   it("keeps a cancelled partial turn visible after the next turn starts", async () => {
     const archivedTurn: ArchivedAgentStreamTurn = {
       turn: {

@@ -46,7 +46,7 @@ export function NewProjectDialog({
         <DialogHeader className="sr-only">
           <DialogTitle>新建项目</DialogTitle>
           <DialogDescription>
-            填写项目信息，AI 将为你生成阶段规划和任务分解
+            填写项目信息，创建后可让 Agent 生成阶段规划和任务分解建议
           </DialogDescription>
         </DialogHeader>
         <ProjectIntakeForm

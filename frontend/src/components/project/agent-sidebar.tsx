@@ -41,8 +41,6 @@ import {
   AgentStepIndicator,
   ChatComposer,
   StarterPrompts,
-  AgentGuidedTour,
-  useGuidedTour,
 } from "./agent";
 import type { AgentStreamStatus } from "./agent/AgentStepIndicator";
 import type { AgentAction } from "./project-actions";
@@ -462,8 +460,6 @@ export function AgentSidebar({
   const [confirmedIds, setConfirmedIds] = useState<Set<string>>(new Set());
   const [actionLog, setActionLog] = useState<Array<{ id: string; artifactId: string; type: "confirmed" | "dismissed"; text: string }>>([]);
   const [steeringError, setSteeringError] = useState<string | null>(null);
-  const { active: tourActive, complete: tourComplete } = useGuidedTour();
-
   // 拖动调整宽度状态
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     if (typeof window === "undefined" || typeof localStorage === "undefined") return SIDEBAR_DEFAULT_WIDTH;
@@ -827,7 +823,6 @@ export function AgentSidebar({
       style={!collapsed ? { width: `${sidebarWidth}px`, transition: isDragging ? "none" : "width 220ms cubic-bezier(0.23, 1, 0.32, 1)" } : undefined}
       initial={false}
     >
-      <AgentGuidedTour active={tourActive && isExpanded && hasProject} onComplete={tourComplete} />
       <button
         type="button"
         onClick={toggle}
@@ -1277,7 +1272,7 @@ const QUICK_REPLY_INSTRUCTION_MAP: Record<string, string> = {
   "根据签到调整计划": "请执行 replan 模块：根据签到结果调整项目计划。用户点击了快捷回复「根据签到调整计划」，请直接运行 replan 模块生成计划调整草案。",
   "根据成员情况推荐分工": "请执行 assign 模块：根据成员情况推荐分工。用户点击了快捷回复「根据成员情况推荐分工」，请直接运行 assign 模块。",
   "把当前阶段拆成任务": "请执行 breakdown 模块：把当前阶段拆成可执行任务。用户点击了快捷回复「把当前阶段拆成任务」，请直接运行 breakdown 模块。",
-  "按三周节奏生成阶段计划": "请执行 plan 模块：按三周节奏生成阶段计划。用户点击了快捷回复「按三周节奏生成阶段计划」，请直接运行 plan 模块。",
+  "根据项目约束生成阶段计划": "请执行 plan 模块：根据截止日期、交付物、团队容量和完成标准生成阶段计划。用户点击了快捷回复「根据项目约束生成阶段计划」，请直接运行 plan 模块。",
   "先帮我澄清方向": "请执行 clarify 模块：澄清项目方向。用户点击了快捷回复「先帮我澄清方向」，请直接运行 clarify 模块。",
 };
 
@@ -1296,7 +1291,7 @@ function normalizeSuggestions(items: AgentSuggestion[] | string[]): AgentSuggest
 function inferSuggestions(focus: string): string[] {
   const suggestions: Record<string, string[]> = {
     方向澄清: ["先帮我澄清方向", "根据资料生成方向卡", "为什么要先澄清方向？"],
-    阶段计划: ["按三周节奏生成阶段计划", "按答辩倒排阶段", "解释阶段规划依据"],
+    阶段计划: ["根据项目约束生成阶段计划", "按答辩倒排阶段", "解释阶段规划依据"],
     任务拆解: ["把当前阶段拆成任务", "任务拆得更细一点", "优先保留 MVP 任务"],
     分工确认: ["根据成员情况推荐分工", "解释分工依据", "查看未确认分工"],
     执行推进: ["生成下一步行动卡", "分析当前风险", "根据签到调整计划"],
