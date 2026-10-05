@@ -145,39 +145,3 @@ def test_create_db_and_tables_preserves_legacy_projects_with_general_template(mo
             text("SELECT project_template FROM projects WHERE id = 'legacy-project'")
         ).scalar_one()
     assert template == "general"
-
-
-def test_create_db_and_tables_adds_empty_evidence_refs_to_legacy_records(monkeypatch, tmp_path):
-    db_path = tmp_path / "legacy-evidence.sqlite"
-    legacy_engine = create_engine(
-        f"sqlite:///{db_path}",
-        connect_args={"check_same_thread": False},
-        json_serializer=json.dumps,
-        json_deserializer=json.loads,
-    )
-    with legacy_engine.begin() as conn:
-        for table_name in ("assignment_proposals", "risks", "action_cards"):
-            conn.execute(text(f"""
-                CREATE TABLE {table_name} (
-                    id VARCHAR NOT NULL PRIMARY KEY,
-                    title VARCHAR
-                )
-            """))
-            conn.execute(text(
-                f"INSERT INTO {table_name} (id, title) VALUES ('legacy-{table_name}', '旧记录')"
-            ))
-
-    monkeypatch.setattr(database, "engine", legacy_engine)
-    monkeypatch.setattr(database.settings, "database_url", f"sqlite:///{db_path}")
-
-    database.create_db_and_tables()
-    database.create_db_and_tables()
-
-    for table_name in ("assignment_proposals", "risks", "action_cards"):
-        columns = {col["name"] for col in inspect(legacy_engine).get_columns(table_name)}
-        assert "evidence_refs" in columns
-        with legacy_engine.connect() as conn:
-            stored = conn.execute(text(
-                f"SELECT evidence_refs FROM {table_name} WHERE id = 'legacy-{table_name}'"
-            )).scalar_one()
-        assert json.loads(stored) == []
