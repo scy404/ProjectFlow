@@ -109,6 +109,7 @@ class ProjectState(BaseModel):
     deadline: date
     deliverables: str = ""
     project_template: ProjectTemplate = ProjectTemplate.general
+    is_demo: bool = False
     direction_card: dict | None = None
     status: str
     current_stage_id: str | None

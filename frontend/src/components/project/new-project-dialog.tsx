@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -13,37 +12,31 @@ import type { Project, ProjectTemplate } from "@/lib/types";
 
 interface NewProjectDialogProps {
   workspaceId: string;
-  createdBy: string;
+  creatorUserId: string;
+  teamMembers?: Array<{ user_id: string; display_name: string }>;
+  workspaceTeamSize?: number | null;
   defaultProjectTemplate?: ProjectTemplate;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onCreated?: (project: Project) => void;
+  onCreated?: (project: Project, nextStep: "open" | "clarify") => void;
 }
 
 export function NewProjectDialog({
   workspaceId,
-  createdBy,
+  creatorUserId,
+  teamMembers,
+  workspaceTeamSize,
   defaultProjectTemplate,
   open,
   onOpenChange,
   onCreated,
 }: NewProjectDialogProps) {
-  const [createdProject, setCreatedProject] = useState<Project | null>(null);
-
-  const handleCreated = (project: Project) => {
-    setCreatedProject(project);
-    onCreated?.(project);
-    // Close dialog after a short delay so user sees success
-    setTimeout(() => {
-      onOpenChange(false);
-      setCreatedProject(null);
-    }, 1500);
+  const handleCreated = (project: Project, nextStep: "open" | "clarify") => {
+    onCreated?.(project, nextStep);
+    onOpenChange(false);
   };
 
   const handleOpenChange = (open: boolean) => {
-    if (!open) {
-      setCreatedProject(null);
-    }
     onOpenChange(open);
   };
 
@@ -58,8 +51,10 @@ export function NewProjectDialog({
         </DialogHeader>
         <ProjectIntakeForm
           workspaceId={workspaceId}
-          defaultCreatedBy={createdBy}
+          creatorUserId={creatorUserId}
           defaultProjectTemplate={defaultProjectTemplate}
+          teamMembers={teamMembers}
+          workspaceTeamSize={workspaceTeamSize}
           onCreated={handleCreated}
         />
       </DialogContent>

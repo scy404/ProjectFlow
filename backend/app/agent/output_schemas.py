@@ -46,6 +46,14 @@ class DirectionCardOutput(AgentOutputBase):
     unknowns: list[str] = Field(default_factory=list, description="Important unknowns that could affect the plan")
     mvp_boundary: dict | None = Field(default=None, description="MVP scope boundary with must_have, defer, out_of_scope")
     decision_points: list[str] = Field(default_factory=list, description="Key decisions the team needs to make")
+    validation_hypotheses: list[str] = Field(
+        default_factory=list,
+        description="Optional assumptions the team should validate through project tasks",
+    )
+    success_signals: list[str] = Field(
+        default_factory=list,
+        description="Optional observable signals that indicate a hypothesis is supported",
+    )
     requires_confirmation: bool = True
 
     @model_validator(mode="after")

@@ -27,7 +27,7 @@ def owner_and_workspace(client: TestClient) -> tuple[str, str]:
     return user_id, workspace["id"]
 
 
-@pytest.mark.parametrize("project_template", ["coursework", "competition", "startup", "research"])
+@pytest.mark.parametrize("project_template", ["general", "coursework", "competition", "startup", "research"])
 def test_project_template_survives_all_read_paths(
     client: TestClient,
     owner_and_workspace: tuple[str, str],
@@ -69,6 +69,21 @@ def test_project_template_survives_all_read_paths(
     listed = client.get("/api/workspaces").json()
     assert next(item for item in listed if item["id"] == workspace_id)["team_size"] == 5
 
+    updated_template = "research" if project_template != "research" else "general"
+    updated = client.patch(
+        f"/api/projects/{project_id}",
+        json={"project_template": updated_template},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["project_template"] == updated_template
+    assert client.get(f"/api/projects/{project_id}").json()["project_template"] == updated_template
+    assert client.get(f"/api/projects/{project_id}/state").json()["project"]["project_template"] == updated_template
+    updated_agent_state = client.get(
+        f"/api/workspaces/{workspace_id}/state",
+        params={"project_id": project_id},
+    ).json()
+    assert updated_agent_state["project"]["project_template"] == updated_template
+
 
 def test_workspace_project_template_defaults_and_rejects_unknown_value(client: TestClient) -> None:
     user = client.post("/api/users", json={"display_name": "工作区创建者"}).json()
@@ -106,6 +121,38 @@ def test_project_template_defaults_and_rejects_unknown_value(
     response = client.post("/api/projects", json=payload)
     assert response.status_code == 201
     assert response.json()["project_template"] == "general"
+    assert response.json()["is_demo"] is False
 
     invalid = client.post("/api/projects", json={**payload, "project_template": "unknown"})
     assert invalid.status_code == 422
+
+
+def test_demo_flag_defaults_false_and_survives_update_and_agent_state(
+    client: TestClient,
+    owner_and_workspace: tuple[str, str],
+) -> None:
+    user_id, workspace_id = owner_and_workspace
+    response = client.post(
+        "/api/projects",
+        json={
+            "workspace_id": workspace_id,
+            "name": "演示标记测试",
+            "idea": "验证演示标记不依赖项目名称进行猜测",
+            "deadline": (date.today() + timedelta(days=30)).isoformat(),
+            "deliverables": "原型",
+            "created_by": user_id,
+        },
+    )
+    assert response.status_code == 201
+    project_id = response.json()["id"]
+    assert response.json()["is_demo"] is False
+
+    updated = client.patch(f"/api/projects/{project_id}", json={"is_demo": True})
+    assert updated.status_code == 200
+    assert updated.json()["is_demo"] is True
+    assert client.get(f"/api/projects/{project_id}/state").json()["project"]["is_demo"] is True
+    agent_state = client.get(
+        f"/api/workspaces/{workspace_id}/state",
+        params={"project_id": project_id},
+    ).json()
+    assert agent_state["project"]["is_demo"] is True

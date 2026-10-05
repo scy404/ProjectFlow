@@ -98,7 +98,8 @@ export type Project = {
   idea: string;
   deadline: string;
   deliverables: string;
-  project_template?: ProjectTemplate;
+  project_template: ProjectTemplate;
+  is_demo: boolean;
   status: "draft" | "active" | "at_risk" | "completed";
   current_stage_id?: string | null;
   direction_card?: DirectionCard | null;
@@ -114,7 +115,12 @@ export type CreateProjectRequest = {
   deliverables: string;
   project_template: ProjectTemplate;
   created_by: string;
+  is_demo?: boolean;
 };
+
+export type UpdateProjectRequest = Partial<
+  Pick<Project, "name" | "idea" | "deadline" | "deliverables" | "project_template" | "is_demo" | "status">
+>;
 
 // --- Direction Card ---
 export type DirectionCard = {
@@ -135,6 +141,8 @@ export type DirectionCard = {
   };
   decision_points?: string[];
   reason?: string;
+  validation_hypotheses?: string[];
+  success_signals?: string[];
 };
 
 // --- Project Resource ---
@@ -268,6 +276,7 @@ export type EvidenceRef = {
   entity_id?: string | null;
   field: string;
   value: string;
+  note?: string | null;
 };
 
 // --- Risk ---

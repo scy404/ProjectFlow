@@ -19,6 +19,7 @@ import {
   Lightbulb,
   BookOpen,
   Bot,
+  Info,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { MultilineText } from "@/components/ui/multiline-text";
@@ -280,6 +281,15 @@ function ViewRenderer({
     case "overview":
       return (
         <div className="space-y-6">
+          {project.is_demo && (
+            <div className="flex items-start gap-3 rounded-lg bg-citron/15 px-4 py-3 text-sm text-ink" role="status">
+              <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" aria-hidden="true" />
+              <div>
+                <p className="font-semibold">这是官方演示项目</p>
+                <p className="mt-0.5 text-ink/65">其中的数据用于展示完整流程，可以安全浏览或通过“重置演示”恢复。</p>
+              </div>
+            </div>
+          )}
           {/* Project Header Card */}
           <section className="rounded-xl border border-neutral-200 bg-white p-5 shadow-[0_2px_8px_rgba(0,0,0,0.01)] hover:shadow-[0_4px_16px_rgba(0,0,0,0.015)] transition-all">
             <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">

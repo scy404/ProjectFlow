@@ -13,6 +13,7 @@ describe("EvidenceRefList", () => {
             entity_id: "user-private-123",
             field: "available_hours_per_week",
             value: "8 小时",
+            note: "来自成员档案",
           },
         ]}
       />,
@@ -21,11 +22,12 @@ describe("EvidenceRefList", () => {
     expect(screen.getByLabelText("结构化依据")).toBeTruthy();
     expect(screen.getByText("每周可用时间：")).toBeTruthy();
     expect(screen.getByText("8 小时")).toBeTruthy();
+    expect(screen.getByText("（来自成员档案）")).toBeTruthy();
     expect(container.textContent).not.toContain("user-private-123");
   });
 
   it("renders nothing for missing evidence", () => {
     const { container } = render(<EvidenceRefList refs={[]} />);
-    expect(container).toBeEmptyDOMElement();
+    expect(container.childElementCount).toBe(0);
   });
 });

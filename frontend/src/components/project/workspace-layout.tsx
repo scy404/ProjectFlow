@@ -34,6 +34,7 @@ interface WorkspaceLayoutProps {
   actionSuccess?: string | null;
   viewParam?: ProjectView | null;
   onSelectProject: (projectId: string) => void;
+  onProjectCreated?: (projectId: string, nextStep: "open" | "clarify") => void | Promise<void>;
   onClearSelectedProject: () => void;
   onShowWorkspace: (show: boolean) => void;
   onNavigateView: (view: ProjectView) => void;
@@ -129,6 +130,7 @@ export function WorkspaceLayout({
   actionSuccess,
   viewParam,
   onSelectProject,
+  onProjectCreated,
   onClearSelectedProject,
   onShowWorkspace,
   onNavigateView,
@@ -226,6 +228,7 @@ export function WorkspaceLayout({
             state={workspaceState}
             currentUserId={currentUserId}
             onNavigateToProject={handleSelectProject}
+            onProjectCreated={onProjectCreated}
             onRefresh={onRefresh}
           />
         ) : viewParam === "agent" ? (

@@ -13,6 +13,7 @@ class ProjectCreate(BaseModel):
     deliverables: NonEmptyStr
     created_by: NonEmptyStr
     project_template: ProjectTemplate = ProjectTemplate.general
+    is_demo: bool = False
 
     @model_validator(mode="after")
     def validate_deadline(self) -> "ProjectCreate":
@@ -25,6 +26,8 @@ class ProjectUpdate(BaseModel):
     idea: NonEmptyStr | None = None
     deadline: date | None = None
     deliverables: NonEmptyStr | None = None
+    project_template: ProjectTemplate | None = None
+    is_demo: bool | None = None
     status: ProjectStatus | None = None
     direction_card: dict | None = None
 
@@ -43,6 +46,7 @@ class ProjectRead(BaseModel):
     deadline: date
     deliverables: str
     project_template: ProjectTemplate
+    is_demo: bool
     status: ProjectStatus
     current_stage_id: str | None
     direction_card: dict | None

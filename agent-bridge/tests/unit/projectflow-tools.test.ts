@@ -750,6 +750,16 @@ describe("projectflow-tools", () => {
       expect(manifest.backend.endpoint).toBe("POST /internal/agent-tools/direction-card-proposal");
       expect(manifest.proposalConfirmation?.createsProposal).toBe(true);
       expect(manifest.proposalConfirmation?.requiredBeforeCommit).toBe(true);
+      const schema = manifest.inputSchema as {
+        properties: { output: { properties: Record<string, unknown> } };
+      };
+      expect(schema.properties.output.properties).toHaveProperty("source_summary");
+      expect(schema.properties.output.properties).toHaveProperty("assumptions");
+      expect(schema.properties.output.properties).toHaveProperty("unknowns");
+      expect(schema.properties.output.properties).toHaveProperty("mvp_boundary");
+      expect(schema.properties.output.properties).toHaveProperty("decision_points");
+      expect(schema.properties.output.properties).toHaveProperty("validation_hypotheses");
+      expect(schema.properties.output.properties).toHaveProperty("success_signals");
     });
 
     it("generate_direction_card_proposal executor calls POST /internal/agent-tools/direction-card-proposal", async () => {

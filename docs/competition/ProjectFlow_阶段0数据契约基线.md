@@ -19,7 +19,7 @@
 
 | 对象 | 数据库事实 | 写入 Schema | 读取 Schema / API | Agent / 前端消费 |
 | --- | --- | --- | --- | --- |
-| Project | `id, workspace_id, name, idea, deadline, deliverables, project_template, status, current_stage_id, direction_card, created_by, created_at, updated_at` | `ProjectCreate`；`ProjectUpdate` | `ProjectRead`；`POST /api/projects`、`GET/PATCH /api/projects/{id}`、`GET /api/projects/{id}/state` | workspace state 与 project state 均返回项目模板和归一化后的方向卡；前端项目表单、总览及 Agent 上下文消费 |
+| Project | `id, workspace_id, name, idea, deadline, deliverables, project_template, is_demo, status, current_stage_id, direction_card, created_by, created_at, updated_at` | `ProjectCreate`；`ProjectUpdate` | `ProjectRead`；`POST /api/projects`、`GET/PATCH /api/projects/{id}`、`GET /api/projects/{id}/state` | workspace state 与 project state 均返回项目模板、演示标记和归一化后的方向卡；前端项目表单、总览及 Agent 上下文消费 |
 | Workspace | `id, name, owner_user_id, description, team_size, project_template, created_at, updated_at` | `WorkspaceCreate`，owner 由 query 参数提供 | `WorkspaceRead`；`POST/GET /api/workspaces`、`GET /api/workspaces/{id}` | `team_size` 与 `project_template` 均返回前端；旧 `use_case` 只作为迁移输入，不是公开契约 |
 | DirectionCard | 不设独立表，保存在 `Project.direction_card` TEXT JSON | `ProjectUpdate.direction_card: dict`；Agent clarify 确认后写入 | 所有 Project、ProjectState、WorkspaceState 读取路径均调用 `normalize_direction_card()` | 当前键：`problem, users, value, deliverables, boundaries, risks, suggested_questions`；扩展键按存在性返回 |
 | Task | `id, project_id, stage_id, title, description, priority, status, owner_user_id, backup_owner_user_id, due_date, estimated_hours, dependency_ids, acceptance_criteria, can_cut, assignment_reason, order_index, created_by_agent, updated_at` | `TaskCreate`、`TaskUpdate`、`TaskStatusUpdateCreate` | `TaskRead`；`POST /api/tasks`、`GET/PATCH /api/tasks/{id}`、项目/阶段任务列表 | 验证活动继续建模为 Task；后续只在 Task 契约上增加验证语义，不建立 Experiment Runtime |
@@ -40,7 +40,7 @@
 | `boundaries` | `constraints` + `out_of_scope` | 当前键为空时合并旧列表并去重 |
 | `risks` | `initial_risks` | 当前键为空时读取旧列表 |
 
-`source_summary`、`assumptions`、`unknowns`、`mvp_boundary`、`decision_points`、`reason` 属于兼容扩展字段：只有数据中存在时才返回。非法 JSON、非对象 JSON 或空字符串返回 `null`。Project API、聚合 ProjectState 和供 Agent 使用的 WorkspaceState 必须得到同一归一化结果。
+`source_summary`、`assumptions`、`unknowns`、`mvp_boundary`、`decision_points`、`reason`、`validation_hypotheses`、`success_signals` 属于兼容扩展字段：只有数据中存在时才返回。历史 `mvp_boundary` 子项允许单字符串并归一化为单元素数组。非法 JSON、非对象 JSON 或空字符串返回 `null`。Project API、聚合 ProjectState 和供 Agent 使用的 WorkspaceState 必须得到同一归一化结果。
 
 ## 4. JSON 字段序列化规则
 
@@ -61,18 +61,19 @@
   "entity_type": "task",
   "entity_id": "optional-internal-id",
   "field": "priority",
-  "value": "P0"
+  "value": "P0",
+  "note": "可选的人类可读说明"
 }
 ```
 
-`entity_type`、`field`、`value` 必填且非空；`entity_id` 可选。前端只显示字段标签和值，不显示内部实体 ID。
+`entity_type`、`field`、`value` 必填且非空；`entity_id` 与 `note` 可选。前端显示字段标签、值和可选说明，不显示内部实体 ID。
 
 ## 5. SQLite 迁移保证
 
 应用启动调用 `SQLModel.metadata.create_all(engine)` 后运行幂等迁移：
 
 - `_migrate_workspaces()`：补 `team_size`、`project_template`，并将旧 `use_case` 映射到统一枚举。
-- `_migrate_projects()`：补 `project_template`，旧项目默认 `general`。
+- `_migrate_projects()`：补 `project_template` 与 `is_demo`，旧项目分别默认 `general` 与 `false`；为两字段建立索引。
 - `_migrate_evidence_refs()`：为 `assignment_proposals`、`risks`、`action_cards` 补 `JSON NOT NULL DEFAULT '[]'`。
 - 现有 proposals、tasks、agent runs、conversation 迁移继续按原顺序执行。
 
@@ -82,7 +83,7 @@
 
 | Bridge 工具 | FastAPI 入口 | 新增/固定字段 | 可选性 |
 | --- | --- | --- | --- |
-| `recommend_assignment` | `POST /internal/agent-tools/assignment-recommendation` | `evidence_refs[]`，item 使用 `entity_type/entity_id/field/value` | 整体可选，默认空；item 的 `entity_id` 可选 |
+| `recommend_assignment` | `POST /internal/agent-tools/assignment-recommendation` | `evidence_refs[]`，item 使用 `entity_type/entity_id/field/value/note` | 整体可选，默认空；item 的 `entity_id`、`note` 可选 |
 | `create_risk` | `POST /internal/agent-tools/create-risk` | 同上 | 同上 |
 | Agent flow 结构化输出 | FastAPI agent flow service | Assignment、Risk、ActionCard 输出中的 `evidence_refs` | 缺失时为空列表 |
 

@@ -98,10 +98,11 @@ interface WorkspaceContentProps {
   state: ProjectState | WorkspaceState;
   currentUserId?: string;
   onNavigateToProject?: (projectId: string) => void;
+  onProjectCreated?: (projectId: string, nextStep: "open" | "clarify") => void | Promise<void>;
   onRefresh?: () => void;
 }
 
-export function WorkspaceContent({ state, currentUserId, onNavigateToProject, onRefresh }: WorkspaceContentProps) {
+export function WorkspaceContent({ state, currentUserId, onNavigateToProject, onProjectCreated, onRefresh }: WorkspaceContentProps) {
   const workspace = state.workspace;
   const memberships = state.memberships ?? [];
   const members = state.members;
@@ -402,9 +403,10 @@ export function WorkspaceContent({ state, currentUserId, onNavigateToProject, on
                             <p className="truncate font-medium text-neutral-800 text-sm">
                               {p.name}
                             </p>
-                            <p className="text-xs text-muted-foreground mt-0.5">
-                              {statusLabelMap[p.status] ?? p.status}
-                            </p>
+                            <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
+                              <span>{statusLabelMap[p.status] ?? p.status}</span>
+                              {p.is_demo && <span className="font-medium text-amber-700">演示数据</span>}
+                            </div>
                           </div>
                         </div>
                       </button>
@@ -478,12 +480,21 @@ export function WorkspaceContent({ state, currentUserId, onNavigateToProject, on
 
       <NewProjectDialog
         workspaceId={workspace.workspace_id}
-        createdBy={workspace.owner_user_id}
+        creatorUserId={currentUserId ?? workspace.owner_user_id}
+        teamMembers={members.map((member) => ({
+          user_id: member.user_id,
+          display_name: member.display_name,
+        }))}
+        workspaceTeamSize={workspace.team_size}
         defaultProjectTemplate={workspace.project_template}
         open={newProjectOpen}
         onOpenChange={setNewProjectOpen}
-        onCreated={(project) => {
-          onNavigateToProject?.(project.id);
+        onCreated={(project, nextStep) => {
+          if (onProjectCreated) {
+            void onProjectCreated(project.id, nextStep);
+          } else {
+            onNavigateToProject?.(project.id);
+          }
         }}
       />
     </motion.div>

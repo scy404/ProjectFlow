@@ -88,7 +88,7 @@ def _migrate_workspaces() -> None:
 
 
 def _migrate_projects() -> None:
-    """Keep existing SQLite projects readable after adding project_template."""
+    """Keep existing SQLite projects readable after adding project metadata."""
     if not settings.database_url.startswith("sqlite"):
         return
     with engine.connect() as conn:
@@ -97,7 +97,18 @@ def _migrate_projects() -> None:
             conn.execute(text(
                 "ALTER TABLE projects ADD COLUMN project_template TEXT NOT NULL DEFAULT 'general'"
             ))
-            conn.commit()
+        if "is_demo" not in columns:
+            conn.execute(text(
+                "ALTER TABLE projects ADD COLUMN is_demo BOOLEAN NOT NULL DEFAULT 0"
+            ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_projects_project_template "
+            "ON projects (project_template)"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_projects_is_demo ON projects (is_demo)"
+        ))
+        conn.commit()
 
 
 def _migrate_agent_runs_v2() -> None:

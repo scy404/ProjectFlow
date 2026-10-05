@@ -63,7 +63,7 @@ BEFORE OUTPUT SELF-CHECK (verify each item, fix any violation before returning):
 OUTPUT_CONTRACT_BY_EVENT_TYPE: dict[AgentEventType, str] = {
     AgentEventType.clarify: """DirectionCardOutput JSON object:
 Required keys: "problem" string, "users" string, "value" string, "deliverables" string[], "boundaries" string[], "risks" string[], "suggested_questions" string[], "reason" string, "requires_confirmation" true.
-Optional enrichment keys (include when project has resources, skills, or clear unknowns): "source_summary" string, "assumptions" string[], "unknowns" string[], "mvp_boundary" object with optional "must_have" string[], "defer" string[], "out_of_scope" string[], "decision_points" string[].
+Optional enrichment keys (include when project has resources, skills, or clear unknowns): "source_summary" string, "assumptions" string[], "unknowns" string[], "mvp_boundary" object with optional "must_have" string[], "defer" string[], "out_of_scope" string[], "decision_points" string[], "validation_hypotheses" string[], "success_signals" string[]. For startup projects, prefer 1-3 concrete validation hypotheses and matching observable success signals. For other templates these arrays may be empty.
 Use 2-4 deliverables, boundaries, risks, and questions.
 SCOPE RULE: Never mention specific external systems (教务系统, 微信, 支付宝, 移动端 App, etc.) in any field. Use generic terms like "外部系统" or "第三方服务" instead. Mentioning these terms — even to exclude them — triggers scope-creep detection.""",
     AgentEventType.plan: """StagePlanOutput JSON object:

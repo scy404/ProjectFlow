@@ -27,6 +27,7 @@ def _project_to_read(project: Project) -> ProjectRead:
         deadline=project.deadline,
         deliverables=project.deliverables,
         project_template=project.project_template,
+        is_demo=project.is_demo,
         status=project.status,
         current_stage_id=project.current_stage_id,
         direction_card=normalize_direction_card(project.direction_card),

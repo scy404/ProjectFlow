@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { motion, AnimatePresence } from "framer-motion"
-import { Plus, X, FileText, Link2, File, ChevronDown, Check, Pencil } from "lucide-react"
+import { AlertCircle, Plus, X, FileText, Link2, File, ChevronDown, Check, Loader2, Pencil, RotateCcw } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -47,6 +47,8 @@ export function ResourceInputPanel({ onChange }: ResourceInputPanelProps) {
   const [isOpen, setIsOpen] = React.useState(true)
   const [collapsed, setCollapsed] = React.useState(new Set<number>())
   const [selectOpenIndex, setSelectOpenIndex] = React.useState<number | null>(null)
+  const [uploadFailures, setUploadFailures] = React.useState<Record<number, { file: File; message: string }>>({})
+  const [uploadingIndex, setUploadingIndex] = React.useState<number | null>(null)
 
   // 下拉菜单打开时，页面滚动即自动关闭
   React.useEffect(() => {
@@ -81,6 +83,15 @@ export function ResourceInputPanel({ onChange }: ResourceInputPanelProps) {
       prev.forEach((i) => {
         if (i < index) next.add(i)
         else if (i > index) next.add(i - 1)
+      })
+      return next
+    })
+    setUploadFailures((prev) => {
+      const next: Record<number, { file: File; message: string }> = {}
+      Object.entries(prev).forEach(([rawIndex, failure]) => {
+        const failureIndex = Number(rawIndex)
+        if (failureIndex < index) next[failureIndex] = failure
+        if (failureIndex > index) next[failureIndex - 1] = failure
       })
       return next
     })
@@ -120,6 +131,35 @@ export function ResourceInputPanel({ onChange }: ResourceInputPanelProps) {
       next.delete(index)
       return next
     })
+  }
+
+  const uploadResourceFile = async (index: number, file: File) => {
+    const currentTitle = resources[index]?.title.trim() ?? ""
+    setUploadingIndex(index)
+    setUploadFailures((prev) => {
+      const next = { ...prev }
+      delete next[index]
+      return next
+    })
+    updateResource(index, {
+      file_name: "上传中...",
+      title: currentTitle || file.name,
+    })
+    try {
+      const result = await uploadFile(file)
+      updateResource(index, {
+        file_name: result.file_id,
+        title: currentTitle || result.original_name,
+      })
+    } catch {
+      updateResource(index, { file_name: file.name })
+      setUploadFailures((prev) => ({
+        ...prev,
+        [index]: { file, message: "文件上传失败。可以重试，或跳过上传并保留文件名。" },
+      }))
+    } finally {
+      setUploadingIndex((current) => current === index ? null : current)
+    }
   }
 
   return (
@@ -354,22 +394,7 @@ export function ResourceInputPanel({ onChange }: ResourceInputPanelProps) {
                                   onChange={async (e) => {
                                     const file = e.target.files?.[0]
                                     if (!file) return
-                                    const title = res.title.trim()
-                                    updateResource(index, {
-                                      file_name: "上传中...",
-                                      title: title || file.name,
-                                    })
-                                    try {
-                                      const result = await uploadFile(file)
-                                      updateResource(index, {
-                                        file_name: result.file_id,
-                                        title: title || result.original_name,
-                                      })
-                                    } catch {
-                                      updateResource(index, {
-                                        file_name: file.name,
-                                      })
-                                    }
+                                    await uploadResourceFile(index, file)
                                     e.target.value = ""
                                   }}
                                 />
@@ -392,11 +417,41 @@ export function ResourceInputPanel({ onChange }: ResourceInputPanelProps) {
                                       document.getElementById(`file-pick-${index}`)?.click()
                                     }
                                     className="h-9 shrink-0 gap-1 text-xs"
+                                    disabled={uploadingIndex === index}
                                   >
-                                    <File className="h-3.5 w-3.5" />
-                                    选择文件
+                                    {uploadingIndex === index ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <File className="h-3.5 w-3.5" />}
+                                    {uploadingIndex === index ? "上传中" : "选择文件"}
                                   </Button>
                                 </div>
+                                {uploadFailures[index] && (
+                                  <div className="flex flex-wrap items-center gap-2 rounded-md bg-destructive/5 px-3 py-2 text-xs text-destructive" role="alert">
+                                    <AlertCircle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                                    <span className="min-w-0 flex-1">{uploadFailures[index].message}</span>
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-7 px-2 text-xs"
+                                      onClick={() => uploadResourceFile(index, uploadFailures[index].file)}
+                                    >
+                                      <RotateCcw className="h-3.5 w-3.5" />
+                                      重试
+                                    </Button>
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-7 px-2 text-xs"
+                                      onClick={() => setUploadFailures((prev) => {
+                                        const next = { ...prev }
+                                        delete next[index]
+                                        return next
+                                      })}
+                                    >
+                                      跳过
+                                    </Button>
+                                  </div>
+                                )}
                                 <p className="text-[11px] text-muted-foreground">
                                   选择文件后将自动上传，也可手动输入路径或链接
                                 </p>

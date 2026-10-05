@@ -132,6 +132,7 @@ def reset_demo_data(session: Session) -> DemoResetRead:
         deadline=date(2026, 6, 7),
         deliverables="Clickable MVP demo, review summary, and 5-minute presentation path",
         project_template="coursework",
+        is_demo=True,
         status=ProjectStatus.active,
         direction_card={
             "problem": "Student teams lose time deciding what to do next.",
