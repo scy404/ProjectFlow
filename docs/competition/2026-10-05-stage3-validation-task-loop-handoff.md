@@ -116,6 +116,6 @@ SQLite 迁移是幂等的：对旧 `tasks` 表逐列补齐，历史任务获得�
 
 ## 10. 提交与推送
 
-- 实现提交：待提交后补充。
+- 实现提交：`9b0a6d6`（`feat: add validation task feedback loop`）。
 - 远端分支：待推送后补充。
 - 上一轮分支：`codex/revert-stage2-guided-tour-20261004`，按用户要求与本分支一起推送。
