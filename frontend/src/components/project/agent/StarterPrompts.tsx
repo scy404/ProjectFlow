@@ -17,7 +17,7 @@ const FOCUS_PROMPTS: Record<string, { label: string; hint: string; instruction: 
     { label: "这个项目的核心价值是什么？", hint: "和 Agent 对话，理清项目的核心定位", instruction: "这个项目的核心价值是什么？帮我和团队理清楚。" },
   ],
   阶段计划: [
-    { label: "按三周节奏生成阶段计划", hint: "按三周一个阶段的标准节奏倒排", instruction: "请执行 plan 模块：按三周节奏生成阶段计划。" },
+    { label: "根据项目约束生成阶段计划", hint: "结合截止日期、交付物和团队容量划分阶段", instruction: "请执行 plan 模块：根据截止日期、交付物、团队容量和完成标准生成阶段计划。" },
     { label: "按截止日期倒排阶段", hint: "根据项目截止日期自动计算每个阶段", instruction: "请执行 plan 模块：按截止日期倒排阶段。" },
     { label: "解释阶段划分的依据", hint: "了解 Agent 为什么这样划分阶段", instruction: "解释阶段划分的依据，帮我和团队理解规划逻辑。" },
   ],

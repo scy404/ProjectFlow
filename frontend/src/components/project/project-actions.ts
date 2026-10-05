@@ -42,7 +42,7 @@ export const SLASH_COMMANDS: SlashCommandDef[] = [
  *
  * - 无附加文本时 content = defaultInstruction（如 "请执行 plan 模块"），
  *   与后端 _EXPANDED_QUICK_REPLIES 一致，即使 skill 参数丢失也能正确路由。
- * - 有附加文本时 content = 纯用户附加上下文（如 "按三周节奏"），
+ * - 有附加文本时 content = 纯用户附加上下文（如 "按截止日期倒排"），
  *   不做前缀拼接，避免冗余——skill 已确定模块路由。
  */
 export function parseSlashCommand(input: string): { skill: string; command: string; content: string } | null {

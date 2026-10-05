@@ -37,7 +37,7 @@ const ALL_SKILLS: SkillMetadataV2[] = [
     allowedTools: ["get_workspace_state", "list_pending_proposals", "generate_stage_plan_proposal"],
     v2: {
       version: 2,
-      triggerExamples: ["制定计划", "生成阶段计划", "按三周节奏生成阶段计划"],
+      triggerExamples: ["制定计划", "生成阶段计划", "根据项目约束生成阶段计划"],
       negativeTriggers: ["计划延期了", "如何制定计划"],
       prerequisites: [{ type: "has_direction_card", description: "需要方向卡" }],
       outcomeType: "proposal",

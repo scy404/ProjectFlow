@@ -587,7 +587,7 @@ describe("projectflow-tools", () => {
       const tool = registry.get("generate_stage_plan_proposal")!;
 
       await tool.execute(
-        { project_id: "p1", workspace_id: "ws1", user_instruction: "按三周节奏生成阶段计划。" },
+        { project_id: "p1", workspace_id: "ws1", user_instruction: "根据截止日期、交付物和团队容量生成阶段计划。" },
         makeContext({ toolName: "generate_stage_plan_proposal" }),
       );
 
@@ -597,7 +597,7 @@ describe("projectflow-tools", () => {
       expect(client.calls[0]!.payload.arguments).toEqual({
         project_id: "p1",
         workspace_id: "ws1",
-        user_instruction: "按三周节奏生成阶段计划。",
+        user_instruction: "根据截止日期、交付物和团队容量生成阶段计划。",
       });
     });
 

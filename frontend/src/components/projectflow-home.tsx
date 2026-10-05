@@ -130,9 +130,9 @@ const signalSummary = [
 ] as const;
 
 const productMetrics = [
-  { value: "68%", label: "阶段完成度", tone: "text-neutral-950" },
-  { value: "1 个高风险", label: "范围风险", tone: "text-coral" },
-  { value: "3", label: "待确认行动", tone: "text-moss" },
+  { value: "进行中", label: "阶段状态", tone: "text-neutral-950" },
+  { value: "高", label: "范围风险", tone: "text-coral" },
+  { value: "待确认", label: "行动状态", tone: "text-moss" },
 ] as const;
 
 const actionRows = [
@@ -145,7 +145,7 @@ const scenarioRows = [
   { label: "科创项目", value: "从题目方向到 demo 链路，持续收敛范围。", icon: Compass },
   { label: "课程小组", value: "把零散讨论变成可确认的阶段计划和任务。", icon: ClipboardCheck },
   { label: "竞赛团队", value: "临近评审前暴露风险，及时砍掉低优先级功能。", icon: Radar },
-  { label: "训练营项目", value: "成员时间变化后，分工和下一步自动重新排布。", icon: Activity },
+  { label: "实践项目", value: "成员时间变化后，形成可确认的分工与重排建议。", icon: Activity },
 ] as const;
 
 const comparisonRows = [
@@ -802,8 +802,8 @@ export function ProjectFlowHome() {
             <Reveal className="h-full">
               <article className="flex h-full flex-col justify-between rounded-[24px] border border-[#e9cf50] bg-[#fff1a8] p-6 text-neutral-950 shadow-[0_22px_54px_rgba(118,96,12,0.10)]">
                 <div>
-                  <p className="font-grotesk text-[3.25rem] font-medium leading-none tracking-normal">68%</p>
-                  <p className="mt-2 text-sm font-medium text-neutral-700">演示闭环完成度</p>
+                  <p className="font-grotesk text-[2.5rem] font-medium leading-none tracking-normal">范围收敛</p>
+                  <p className="mt-2 text-sm font-medium text-neutral-700">来自任务与风险状态</p>
                 </div>
                 <p className="text-sm leading-6 text-neutral-700">发布、搜索、联系卖家先跑通，支付和评价进入二期。</p>
               </article>
@@ -812,8 +812,8 @@ export function ProjectFlowHome() {
             <Reveal delay={0.04} className="h-full">
               <article className="flex h-full flex-col justify-between rounded-[24px] border border-[#8edf93] bg-[#b9f3b7] p-6 text-neutral-950 shadow-[0_22px_54px_rgba(38,123,63,0.10)]">
                 <div>
-                  <p className="font-grotesk text-[3.25rem] font-medium leading-none tracking-normal">3</p>
-                  <p className="mt-2 text-sm font-medium text-neutral-700">待确认行动</p>
+                  <p className="font-grotesk text-[2.5rem] font-medium leading-none tracking-normal">待确认</p>
+                  <p className="mt-2 text-sm font-medium text-neutral-700">行动建议</p>
                 </div>
                 <p className="text-sm leading-6 text-neutral-700">每条都带 owner、时间和触发原因，不再只是一句“尽快”。</p>
               </article>
