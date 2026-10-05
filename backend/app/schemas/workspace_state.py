@@ -70,6 +70,7 @@ class AssignmentProposalState(BaseModel):
     task_id: str
     recommended_owner_user_id: str
     backup_owner_user_id: str | None = None
+    evidence_refs: list[EvidenceRef] = Field(default_factory=list)
     status: str
 
 
