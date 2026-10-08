@@ -4,6 +4,8 @@ import uuid
 
 from fastapi.testclient import TestClient
 
+from app.tests.test_support import relative_schedule
+
 
 _IDEMPOTENCY_COUNTER = 0
 
@@ -28,6 +30,7 @@ def _tool_envelope(tool_name: str, workspace_id: str, project_id: str, arguments
 
 
 def _create_blocked_checkin_fixture(client: TestClient):
+    dates = relative_schedule()
     owner = client.post("/api/users", json={"display_name": "负责人"}).json()
     member = client.post("/api/users", json={"display_name": "小林"}).json()
     workspace = client.post(
@@ -45,7 +48,7 @@ def _create_blocked_checkin_fixture(client: TestClient):
             "workspace_id": workspace["id"],
             "name": "S9 项目",
             "idea": "验证签到推断不直接修改任务状态",
-            "deadline": "2026-08-01",
+            "deadline": dates.project_deadline,
             "deliverables": "可演示闭环",
             "created_by": owner["id"],
         },
@@ -56,8 +59,8 @@ def _create_blocked_checkin_fixture(client: TestClient):
             "project_id": project["id"],
             "name": "实现阶段",
             "goal": "完成后端接口",
-            "start_date": "2026-07-01",
-            "end_date": "2026-07-15",
+            "start_date": dates.stage_start,
+            "end_date": dates.stage_end,
             "deliverable": "后端 API",
         },
     ).json()
@@ -69,7 +72,7 @@ def _create_blocked_checkin_fixture(client: TestClient):
             "title": "后端 API 与数据模型",
             "description": "实现关键接口",
             "priority": "P0",
-            "due_date": "2026-07-10",
+            "due_date": dates.task_due,
             "estimated_hours": 8,
         },
     ).json()
@@ -79,7 +82,7 @@ def _create_blocked_checkin_fixture(client: TestClient):
             "project_id": project["id"],
             "stage_id": stage["id"],
             "cadence_days": 2,
-            "start_date": "2026-07-05",
+            "start_date": dates.cycle_start,
             "created_by_user_id": owner["id"],
         },
     ).json()
@@ -100,6 +103,7 @@ def _create_blocked_checkin_fixture(client: TestClient):
 
 
 def test_checkin_task_updates_create_replan_proposal_without_mutating_task(client: TestClient):
+    dates = relative_schedule()
     workspace, project, stage, task, owner, member = _create_blocked_checkin_fixture(client)
 
     # Step 1: Run checkins-and-risks-analysis (advisory — no replan proposal created yet)
@@ -143,7 +147,7 @@ def test_checkin_task_updates_create_replan_proposal_without_mutating_task(clien
     # Step 2: Run replan-proposal to create the actual replan proposal
     replan_output = {
         "before": {"summary": "当前计划"},
-        "after": {"summary": "调整后计划", "deadline": "2026-08-15"},
+        "after": {"summary": "调整后计划", "deadline": dates.replanned_deadline},
         "impact": "给予一周缓冲以解决数据库字段确认问题",
         "stage_adjustments": [],
         "task_changes": [

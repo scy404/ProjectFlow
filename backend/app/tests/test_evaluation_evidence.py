@@ -32,6 +32,7 @@ from app.main import app
 from app.models import AgentMessage, ProjectMemory
 from app.models.agent_run_state import AgentRunEvent, AgentRunV2
 from app.services.memory_service import set_memory_engine
+from app.tests.test_support import relative_schedule
 
 
 NONCE = "evidence-nonce"
@@ -133,6 +134,7 @@ def _seed_fixture(client: TestClient) -> dict[str, str]:
     - team_conv_id, private_conv_a_id (created by member)
     - private_conv_b_id (created by owner)
     """
+    dates = relative_schedule()
     owner = client.post("/api/users", json={"display_name": "项目负责人"}).json()
     member = client.post("/api/users", json={"display_name": "小林"}).json()
     outsider = client.post("/api/users", json={"display_name": "局外人"}).json()
@@ -151,7 +153,7 @@ def _seed_fixture(client: TestClient) -> dict[str, str]:
             "workspace_id": workspace["id"],
             "name": "证据快照项目",
             "idea": "Test evidence snapshot normalization",
-            "deadline": "2026-08-15",
+            "deadline": dates.project_deadline,
             "deliverables": "Demo",
             "created_by": owner["id"],
         },
@@ -162,8 +164,8 @@ def _seed_fixture(client: TestClient) -> dict[str, str]:
             "project_id": project["id"],
             "name": "开发阶段",
             "goal": "完成核心开发",
-            "start_date": "2026-07-01",
-            "end_date": "2026-07-10",
+            "start_date": dates.stage_start,
+            "end_date": dates.stage_end,
             "deliverable": "核心功能",
         },
     ).json()
@@ -175,7 +177,7 @@ def _seed_fixture(client: TestClient) -> dict[str, str]:
             "title": "后端 API 与数据模型",
             "description": "实现 RESTful API 和数据库模型",
             "priority": "P0",
-            "due_date": "2026-07-10",
+            "due_date": dates.task_due,
         },
     ).json()
 
@@ -944,7 +946,7 @@ def test_evidence_snapshot_rejects_run_from_another_project(
             "workspace_id": ids["workspace_id"],
             "name": "另一个项目",
             "idea": "用于验证运行证据隔离",
-            "deadline": "2026-08-30",
+            "deadline": relative_schedule().replanned_deadline,
             "deliverables": "隔离验证",
             "created_by": ids["owner_id"],
         },

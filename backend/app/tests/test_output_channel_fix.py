@@ -9,10 +9,13 @@ in structured_payload. Fold renders on reload.
 """
 import pytest
 
+from app.tests.test_support import relative_schedule
+
 
 @pytest.fixture
 def seeded_project(client):
     """Create a workspace + project + conversation for testing."""
+    dates = relative_schedule()
     owner = client.post("/api/users", json={"display_name": "测试用户"}).json()
     workspace = client.post(
         "/api/workspaces",
@@ -25,7 +28,7 @@ def seeded_project(client):
             "workspace_id": workspace["id"],
             "name": "测试项目",
             "idea": "测试方向",
-            "deadline": "2026-08-01",
+            "deadline": dates.project_deadline,
             "deliverables": "Demo",
             "created_by": owner["id"],
         },

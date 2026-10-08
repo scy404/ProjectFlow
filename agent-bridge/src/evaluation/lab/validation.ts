@@ -22,6 +22,7 @@ import {
   getFixtureContract,
   computeFixtureContractSha256,
 } from "./fixture-contracts.js";
+import { resolveEvaluationRuntimePaths } from "./runtime-paths.js";
 
 const SAFE_ID = /^[a-zA-Z0-9_-]+$/;
 
@@ -733,15 +734,14 @@ async function validateToolchain(projectRoot: string): Promise<ValidationIssue[]
   if (process.versions.node !== "24.15.0") {
     errors.push({ code: "node_version", message: `Node.js ${process.versions.node} 不匹配，必须使用仓库锁定版本 24.15.0` });
   }
-  const python = join(projectRoot, "backend", ".venv", "bin", "python");
+  const runtimePaths = resolveEvaluationRuntimePaths(projectRoot);
   try {
-    await access(python, constants.X_OK);
+    await access(runtimePaths.python, process.platform === "win32" ? constants.F_OK : constants.X_OK);
   } catch {
-    errors.push({ code: "python_venv", message: "缺少可执行的 backend/.venv/bin/python" });
+    errors.push({ code: "python_venv", message: `缺少后端虚拟环境 Python: ${runtimePaths.python}` });
   }
-  const tsx = join(projectRoot, "agent-bridge", "node_modules", ".bin", "tsx");
   try {
-    await access(tsx, constants.X_OK);
+    await access(runtimePaths.tsx, process.platform === "win32" ? constants.F_OK : constants.X_OK);
   } catch {
     errors.push({ code: "tsx_runtime", message: "agent-bridge 本地 tsx 不可用，请先安装锁定依赖" });
   }

@@ -61,7 +61,12 @@ const createdTempDirs: string[] = [];
 
 afterEach(async () => {
   await Promise.all(
-    createdTempDirs.splice(0).map((path) => rm(path, { recursive: true, force: true })),
+    createdTempDirs.splice(0).map((path) => rm(path, {
+      recursive: true,
+      force: true,
+      maxRetries: 5,
+      retryDelay: 100,
+    })),
   );
 });
 

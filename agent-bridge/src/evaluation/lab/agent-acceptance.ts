@@ -18,6 +18,7 @@
  */
 
 import { execFileSync } from "node:child_process";
+import { resolvePosixShell } from "./runtime-paths.js";
 import { existsSync, readFileSync } from "node:fs";
 import { link, mkdir, writeFile, rm, mkdtemp } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
@@ -547,7 +548,7 @@ async function executeStep(
   let stderr = "";
   let exitCode: number | null = null;
   try {
-    const result = execFileSync("bash", [scriptPath, ...command], {
+    const result = execFileSync(resolvePosixShell(), [scriptPath, ...command], {
       cwd: projectRoot,
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "pipe"],
@@ -750,7 +751,7 @@ function runKnownFaultStep(
   let stderr = "";
   let exitCode: number | null = null;
   try {
-    const result = execFileSync("bash", [scriptPath, ...command], {
+    const result = execFileSync(resolvePosixShell(), [scriptPath, ...command], {
       cwd: projectRoot,
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "pipe"],

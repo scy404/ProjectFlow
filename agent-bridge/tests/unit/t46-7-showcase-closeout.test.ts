@@ -24,12 +24,32 @@
  * `afterEach`.
  */
 
-import { describe, expect, it, afterEach, beforeEach } from "vitest";
-import { mkdtemp, rm, readFile, writeFile, chmod, mkdir } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { describe, expect, it, afterEach, beforeEach, type TestContext } from "vitest";
+import { mkdtemp, rm, readFile, writeFile, chmod, mkdir, symlink } from "node:fs/promises";
+import { existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { execFileSync } from "node:child_process";
+import { resolvePosixShell } from "../../src/evaluation/lab/runtime-paths.js";
+
+async function createSymlinkOrSkip(
+  context: TestContext,
+  target: string,
+  path: string,
+  type?: "dir" | "file",
+): Promise<boolean> {
+  try {
+    await symlink(target, path, type);
+    return true;
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "EPERM" || code === "EACCES" || code === "ENOTSUP") {
+      context.skip(`当前环境不能创建符号链接 (${code})`);
+      return false;
+    }
+    throw error;
+  }
+}
 
 import { EvaluationArtifactStore } from "../../src/evaluation/lab/artifact-store.js";
 import { buildProvenance, sha256, stableStringify } from "../../src/evaluation/lab/validation.js";
@@ -2220,7 +2240,7 @@ describe("T46 C1 §PreviewIntegration — Live preview integration", () => {
 describe("T46-7 §18 — CLI smoke", () => {
   it("scripts/eval-lab usage lists all new commands", () => {
     const scriptPath = resolve(projectRoot, "scripts/eval-lab");
-    const output = execFileSync("bash", [scriptPath], { encoding: "utf-8" });
+    const output = execFileSync(resolvePosixShell(), [scriptPath], { encoding: "utf-8" });
     const parsed = JSON.parse(output) as { commands: Record<string, string> };
     expect(parsed.commands.showcase).toMatch(/showcase/);
     expect(parsed.commands.viewer).toMatch(/viewer/);
@@ -2233,7 +2253,7 @@ describe("T46-7 §18 — CLI smoke", () => {
     const scriptPath = resolve(projectRoot, "scripts/eval-lab");
     expect(() => {
       try {
-        execFileSync("bash", [scriptPath, "totally-unknown-command"], { encoding: "utf-8" });
+        execFileSync(resolvePosixShell(), [scriptPath, "totally-unknown-command"], { encoding: "utf-8" });
       } catch (error) {
         const err = error as NodeJS.ErrnoException & { stdout?: string };
         if (err.stdout && err.stdout.includes("未知命令")) {
@@ -2249,7 +2269,7 @@ describe("T46-7 §18 — CLI smoke", () => {
     // Read the script source and verify each new command appears in
     // the case-statement allowlist. This is a pure file read — no
     // execution — so it cannot time out or trigger network calls.
-    const source = execFileSync("cat", [scriptPath], { encoding: "utf-8" });
+    const source = readFileSync(scriptPath, "utf-8");
     // Extract the case-statement allowlist line. The allowlist is a
     // pipe-separated list ending with `) ;;`.
     const allowlistMatch = source.match(/case\s+"\$COMMAND"\s+in\s*\n\s*([^\n]+)\)\s*;;/);
@@ -2296,11 +2316,11 @@ describe("T46-7 §A — Extension integrity path containment", () => {
     await rm(tempRoot, { recursive: true, force: true }).catch(() => undefined);
   });
 
-  it("rejects symlink runDir", async () => {
+  it("rejects symlink runDir", async (context) => {
     const linkDir = `${runDir}-link`;
     await mkdir(linkDir, { recursive: true });
     // Create symlink to the linkDir
-    await execFileSync("ln", ["-s", linkDir, `${runDir}-symlink`]);
+    if (!await createSymlinkOrSkip(context, linkDir, `${runDir}-symlink`, "dir")) return;
     await expect(
       readExtensionIntegrityIndex(`${runDir}-symlink`, VALID_SHA),
     ).rejects.toThrow(/symlink/);
@@ -2323,7 +2343,7 @@ describe("T46-7 §A — Extension integrity path containment", () => {
     }).toThrow(/\.\./);
   });
 
-  it("rejects symlink within runDir components", async () => {
+  it("rejects symlink within runDir components", async (context) => {
     // Create a directory structure where one component is a symlink.
     const baseDir = join(tempRoot, "real-base");
     await mkdir(baseDir, { recursive: true });
@@ -2332,26 +2352,18 @@ describe("T46-7 §A — Extension integrity path containment", () => {
     // Create a symlink somewhere in the hierarchy
     const linkedDir = join(tempRoot, "linked");
     await mkdir(linkedDir, { recursive: true });
-    try {
-      execFileSync("ln", ["-s", linkedDir, join(tempRoot, "symlink-hop")]);
-    } catch {
-      return;
-    }
+    if (!await createSymlinkOrSkip(context, linkedDir, join(tempRoot, "symlink-hop"), "dir")) return;
     await expect(
       readExtensionIntegrityIndex(join(tempRoot, "symlink-hop"), VALID_SHA),
     ).rejects.toThrow(/symlink/);
   });
 
-  it("rejects symlink file in extension subdirectory", async () => {
+  it("rejects symlink file in extension subdirectory", async (context) => {
     const repairDir = join(runDir, "repair-packets");
     await mkdir(repairDir, { recursive: true });
     const realFile = join(tempRoot, "real-packet.json");
     await writeFile(realFile, JSON.stringify({ packetId: "pkt-001", version: 1 }));
-    try {
-      execFileSync("ln", ["-s", realFile, join(repairDir, "pkt-001.json")]);
-    } catch {
-      return;
-    }
+    if (!await createSymlinkOrSkip(context, realFile, join(repairDir, "pkt-001.json"), "file")) return;
     await expect(
       buildExtensionIntegrityIndex({
         runId, runDir,

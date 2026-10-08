@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, type TestContext } from "vitest";
 import { chmod, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -32,6 +32,25 @@ import {
   verifyFixturePrecondition,
 } from "../../src/evaluation/lab/fixture-contracts.js";
 import { fetchEvidenceSnapshot } from "../../src/evaluation/lab/evidence-client.js";
+
+async function createSymlinkOrSkip(
+  context: TestContext,
+  target: string,
+  path: string,
+  type?: "dir" | "file",
+): Promise<boolean> {
+  try {
+    await symlink(target, path, type);
+    return true;
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "EPERM" || code === "EACCES" || code === "ENOTSUP") {
+      context.skip(`当前环境不能创建符号链接 (${code})`);
+      return false;
+    }
+    throw error;
+  }
+}
 
 const projectRoot = resolve(import.meta.dirname ?? process.cwd(), "../../../");
 const createdRunDirs: string[] = [];
@@ -430,14 +449,14 @@ describe("Evaluation Lab immutable end-to-end loop", () => {
     await expect(store.readStatus()).rejects.toThrow(/schemaVersion 2 不受支持/);
   });
 
-  it("rejects a pre-created run directory symlink before publishing evidence", async () => {
+  it("rejects a pre-created run directory symlink before publishing evidence", async (context) => {
     const runId = `symlink_escape_${Date.now()}`;
     const runDir = join(projectRoot, "agent-bridge", "artifacts", runId);
     const outside = await mkdtemp(join(tmpdir(), "eval-artifact-outside-"));
     const evaluatorTemp = await mkdtemp(join(tmpdir(), "eval-store-symlink-"));
     createdRunDirs.push(runDir, outside, evaluatorTemp);
     await mkdir(join(projectRoot, "agent-bridge", "artifacts"), { recursive: true });
-    await symlink(outside, runDir);
+    if (!await createSymlinkOrSkip(context, outside, runDir, "dir")) return;
     const manifest: RunManifest = {
       schemaVersion: 1,
       runId,
@@ -500,8 +519,10 @@ describe("Evaluation Lab immutable end-to-end loop", () => {
     expect(report.integrityRootSha256).toMatch(/^[a-f0-9]{64}$/);
     expect(existsSync(join(runDir, "manifest.json"))).toBe(true);
     expect(existsSync(join(runDir, "integrity.json"))).toBe(true);
-    expect((await stat(runDir)).mode & 0o777).toBe(0o700);
-    expect((await stat(join(runDir, "manifest.json"))).mode & 0o777).toBe(0o400);
+    if (process.platform !== "win32") {
+      expect((await stat(runDir)).mode & 0o777).toBe(0o700);
+      expect((await stat(join(runDir, "manifest.json"))).mode & 0o777).toBe(0o400);
+    }
 
     const resumed = await runEvaluation({
       projectRoot,

@@ -21,6 +21,10 @@ import { join, dirname, resolve } from "node:path";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import {
+  resolveCommandShimInvocation,
+  resolveEvaluationRuntimePaths,
+} from "../../src/evaluation/lab/runtime-paths.js";
+import {
   GOLDEN_CORE_SCHEMA_VERSION,
   GOLDEN_CORE_SUITE_VERSION,
   CAPABILITY_DOMAINS,
@@ -890,7 +894,7 @@ describe("T46-6 Golden Core — CLI smoke", () => {
   // The CLI uses `findProjectRoot()` which walks up looking for `CLAUDE.md`,
   // so passing the repo root (parent of `agent-bridge/`) works. When tests
   // run from `agent-bridge/`, the repo root is the parent directory.
-  const projectRoot = resolve(testFileDir, "..", "..", "..", "..");
+  const projectRoot = resolve(testFileDir, "..", "..", "..");
 
   function runCli(
     args: string[],
@@ -898,7 +902,9 @@ describe("T46-6 Golden Core — CLI smoke", () => {
     timeoutMs?: number,
   ): { stdout: string; stderr: string; exitCode: number | null } {
     try {
-      const stdout = execFileSync("npx", ["tsx", cliPath, ...args], {
+      const runtime = resolveEvaluationRuntimePaths(projectRoot);
+      const invocation = resolveCommandShimInvocation(runtime.tsx, [cliPath, ...args]);
+      const stdout = execFileSync(invocation.command, invocation.args, {
         cwd,
         encoding: "utf-8",
         stdio: ["pipe", "pipe", "pipe"],
