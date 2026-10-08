@@ -36,6 +36,10 @@ from app.services.memory_service import (
     _write_candidates,
     set_memory_engine,
 )
+from app.tests.test_support import relative_schedule
+
+
+_DATES = relative_schedule()
 
 
 @pytest.fixture(name="engine")
@@ -92,7 +96,7 @@ def _create_fixture(client: TestClient):
             "workspace_id": workspace["id"],
             "name": "Memory Project",
             "idea": "Test memory retrieval",
-            "deadline": "2026-07-15",
+            "deadline": _DATES.project_deadline,
             "deliverables": "Demo",
             "created_by": owner["id"],
         },
@@ -676,7 +680,7 @@ def test_fts_cross_project_no_contamination(session: Session, client: TestClient
             "workspace_id": workspace["id"],
             "name": "Project A",
             "idea": "Target project",
-            "deadline": "2026-08-01",
+            "deadline": _DATES.project_deadline,
             "deliverables": "Demo",
             "created_by": owner["id"],
         },
@@ -687,7 +691,7 @@ def test_fts_cross_project_no_contamination(session: Session, client: TestClient
             "workspace_id": workspace["id"],
             "name": "Project B",
             "idea": "Distractor project",
-            "deadline": "2026-08-01",
+            "deadline": _DATES.project_deadline,
             "deliverables": "Demo",
             "created_by": owner["id"],
         },
@@ -765,7 +769,7 @@ def test_fts_cross_workspace_no_contamination(session: Session, client: TestClie
             "workspace_id": ws_a["id"],
             "name": "Project A",
             "idea": "Target",
-            "deadline": "2026-08-01",
+            "deadline": _DATES.project_deadline,
             "deliverables": "Demo",
             "created_by": owner_a["id"],
         },
@@ -776,7 +780,7 @@ def test_fts_cross_workspace_no_contamination(session: Session, client: TestClie
             "workspace_id": ws_b["id"],
             "name": "Project C",
             "idea": "Distractor",
-            "deadline": "2026-08-01",
+            "deadline": _DATES.project_deadline,
             "deliverables": "Demo",
             "created_by": owner_b["id"],
         },
@@ -840,7 +844,7 @@ def test_fts_cross_project_no_visibility_leak(session: Session, client: TestClie
             "workspace_id": workspace["id"],
             "name": "Leak Project",
             "idea": "Test visibility",
-            "deadline": "2026-08-01",
+            "deadline": _DATES.project_deadline,
             "deliverables": "Demo",
             "created_by": owner["id"],
         },

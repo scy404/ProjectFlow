@@ -55,6 +55,10 @@ from app.agent.memory.query_normalizer import (
 from app.core.database import get_session
 from app.main import app
 from app.services.memory_service import set_memory_engine
+from app.tests.test_support import relative_schedule
+
+
+_DATES = relative_schedule()
 
 
 @pytest.fixture(name="engine")
@@ -115,7 +119,7 @@ def _create_eval_fixture(client: TestClient):
             "workspace_id": workspace["id"],
             "name": "智慧课表",
             "idea": "解决大学生课表冲突问题的课程规划工具",
-            "deadline": "2026-08-15",
+            "deadline": _DATES.project_deadline,
             "deliverables": "课表生成器、冲突检测器",
             "created_by": owner["id"],
         },
@@ -692,7 +696,7 @@ def test_cross_project_distractors_do_not_contaminate_retrieval(session: Session
             "workspace_id": workspace["id"],
             "name": "干扰项目",
             "idea": "与目标项目内容高度相似的干扰项目",
-            "deadline": "2026-08-15",
+            "deadline": _DATES.project_deadline,
             "deliverables": "干扰交付物",
             "created_by": owner["id"],
         },

@@ -1,9 +1,10 @@
-import { spawn, ChildProcess } from "node:child_process";
+import { spawn, spawnSync, ChildProcess } from "node:child_process";
 import { createServer } from "node:net";
 import { mkdtemp, rm, mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { randomBytes } from "node:crypto";
+import { resolveEvaluationRuntimePaths, resolveSidecarInvocation } from "./runtime-paths.js";
 
 const CHILD_ENV_ALLOWLIST = [
   "PATH",
@@ -158,12 +159,12 @@ export class IsolatedProcessPair {
     this.sidecarUrl = `http://127.0.0.1:${this.sidecarPort}`;
 
     const backendPath = resolve(projectRoot, "backend");
-    const pythonExec = join(backendPath, ".venv", "bin", "python");
+    const runtimePaths = resolveEvaluationRuntimePaths(projectRoot);
     const isolatedBaseEnv = buildIsolatedChildEnv();
 
     // Spawn Backend
     this.backendProcess = spawn(
-      pythonExec,
+      runtimePaths.python,
       ["-m", "uvicorn", "app.main:app", "--port", String(this.backendPort), "--host", "127.0.0.1"],
       {
         // Keep pydantic-settings from auto-loading backend/.env.
@@ -186,11 +187,10 @@ export class IsolatedProcessPair {
 
     // Spawn Sidecar
     const sidecarPath = resolve(projectRoot, "agent-bridge");
-    const tsxExec = join(sidecarPath, "node_modules", ".bin", "tsx");
-
+    const sidecarInvocation = resolveSidecarInvocation(projectRoot);
     this.sidecarProcess = spawn(
-      tsxExec,
-      ["src/index.ts"],
+      sidecarInvocation.command,
+      sidecarInvocation.args,
       {
         cwd: sidecarPath,
         env: {
@@ -250,11 +250,17 @@ export class IsolatedProcessPair {
   ): Promise<Record<string, unknown>> {
     const start = Date.now();
     while (Date.now() - start < timeoutMs) {
-      if (
-        this.backendProcess?.exitCode !== null || this.backendProcess?.signalCode !== null
-        || this.sidecarProcess?.exitCode !== null || this.sidecarProcess?.signalCode !== null
-      ) {
-        throw new Error("评测 backend 或 sidecar 进程提前退出");
+      const backendStopped = this.backendProcess?.exitCode !== null
+        || this.backendProcess?.signalCode !== null;
+      const sidecarStopped = this.sidecarProcess?.exitCode !== null
+        || this.sidecarProcess?.signalCode !== null;
+      if (backendStopped || sidecarStopped) {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        const stopped = [
+          backendStopped ? `backend(exit=${this.backendProcess?.exitCode}, signal=${this.backendProcess?.signalCode})` : null,
+          sidecarStopped ? `sidecar(exit=${this.sidecarProcess?.exitCode}, signal=${this.sidecarProcess?.signalCode})` : null,
+        ].filter(Boolean).join(", ");
+        throw new Error(`评测子进程提前退出: ${stopped}\n${this.diagnosticTail()}`);
       }
       try {
         const res = await fetch(url, {
@@ -283,12 +289,8 @@ export class IsolatedProcessPair {
     this.backendProcess = null;
     this.sidecarProcess = null;
 
-    if (backend) {
-      backend.kill("SIGKILL");
-    }
-    if (sidecar) {
-      sidecar.kill("SIGKILL");
-    }
+    terminateProcessTree(backend);
+    terminateProcessTree(sidecar);
 
     try {
       await Promise.all([
@@ -302,13 +304,25 @@ export class IsolatedProcessPair {
 
     if (this.tempRoot) {
       try {
-        await rm(this.tempRoot, { recursive: true, force: true });
+        await rm(this.tempRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
       } catch (err: any) {
         console.error(`[isolation] 清理临时沙箱根目录失败 ${this.tempRoot}: ${err?.message || err}`);
         throw new Error(`沙箱目录物理删除失败: ${err?.message || err}`);
       }
     }
   }
+}
+
+function terminateProcessTree(proc: ChildProcess | null): void {
+  if (!proc || proc.exitCode !== null || proc.signalCode !== null) return;
+  if (process.platform === "win32" && proc.pid) {
+    spawnSync("taskkill", ["/pid", String(proc.pid), "/t", "/f"], {
+      windowsHide: true,
+      stdio: "ignore",
+    });
+    return;
+  }
+  proc.kill("SIGKILL");
 }
 
 function waitProcessExit(proc: ChildProcess | null, timeoutMs = 5000): Promise<void> {

@@ -27,6 +27,10 @@ from sqlmodel import Session, SQLModel, create_engine
 from app.core.database import get_session
 from app.main import app
 from app.services.memory_service import set_memory_engine
+from app.tests.test_support import relative_schedule
+
+
+_DATES = relative_schedule()
 
 
 @pytest.fixture(name="client")
@@ -79,7 +83,7 @@ def _tool_envelope(tool_name: str, workspace_id: str, project_id: str, arguments
 
 _REPLAN_OUTPUT = {
     "before": {"summary": "项目超期"},
-    "after": {"summary": "调整里程碑", "deadline": "2026-07-28"},
+    "after": {"summary": "调整里程碑", "deadline": _DATES.replanned_deadline},
     "impact": "给予一周缓冲",
     "stage_adjustments": [],
     "task_changes": [],
@@ -93,8 +97,8 @@ _STAGE_PLAN_OUTPUT = {
         {
             "name": "核心实现",
             "goal": "完成核心功能",
-            "start_date": "2026-07-07",
-            "end_date": "2026-07-14",
+            "start_date": _DATES.stage_start,
+            "end_date": _DATES.stage_end,
             "deliverable": "可运行的核心闭环",
             "done_criteria": ["核心流程跑通"],
             "order_index": 0,
@@ -147,7 +151,7 @@ def _create_full_fixture(client: TestClient):
             "workspace_id": workspace["id"],
             "name": "Replan Memory Project",
             "idea": "Test replan memory extraction",
-            "deadline": "2026-08-10",
+            "deadline": _DATES.project_deadline,
             "deliverables": "Demo",
             "created_by": owner["id"],
         },
@@ -158,8 +162,8 @@ def _create_full_fixture(client: TestClient):
             "project_id": project["id"],
             "name": "Implementation",
             "goal": "Build features",
-            "start_date": "2026-08-01",
-            "end_date": "2026-08-07",
+            "start_date": _DATES.stage_start,
+            "end_date": _DATES.stage_end,
             "deliverable": "Working app",
         },
     ).json()
@@ -171,7 +175,7 @@ def _create_full_fixture(client: TestClient):
             "title": "Build API",
             "description": "Create REST endpoints",
             "priority": "P0",
-            "due_date": "2026-08-04",
+            "due_date": _DATES.task_due,
             "estimated_hours": 8,
         },
     ).json()

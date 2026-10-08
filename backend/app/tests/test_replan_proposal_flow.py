@@ -4,6 +4,11 @@ import uuid
 
 from fastapi.testclient import TestClient
 
+from app.tests.test_support import relative_schedule
+
+
+_DATES = relative_schedule()
+
 
 _IDEMPOTENCY_COUNTER = 0
 
@@ -29,7 +34,7 @@ def _tool_envelope(tool_name: str, workspace_id: str, project_id: str, arguments
 
 _REPLAN_OUTPUT = {
     "before": {"summary": "项目超期"},
-    "after": {"summary": "调整里程碑", "deadline": "2026-07-28"},
+    "after": {"summary": "调整里程碑", "deadline": _DATES.replanned_deadline},
     "impact": "给予一周缓冲",
     "stage_adjustments": [],
     "task_changes": [],
@@ -68,7 +73,7 @@ def _create_replan_fixture(client: TestClient):
             "workspace_id": workspace["id"],
             "name": "Replan Project",
             "idea": "Test replan proposal flow",
-            "deadline": "2026-08-10",
+            "deadline": _DATES.project_deadline,
             "deliverables": "Demo",
             "created_by": owner["id"],
         },
@@ -79,8 +84,8 @@ def _create_replan_fixture(client: TestClient):
             "project_id": project["id"],
             "name": "Implementation",
             "goal": "Build features",
-            "start_date": "2026-08-01",
-            "end_date": "2026-08-07",
+            "start_date": _DATES.stage_start,
+            "end_date": _DATES.stage_end,
             "deliverable": "Working app",
         },
     ).json()
@@ -92,7 +97,7 @@ def _create_replan_fixture(client: TestClient):
             "title": "Build API",
             "description": "Create REST endpoints",
             "priority": "P0",
-            "due_date": "2026-08-04",
+            "due_date": _DATES.task_due,
             "estimated_hours": 8,
         },
     ).json()
@@ -231,7 +236,7 @@ def test_empty_risk_analysis_no_crash(client: TestClient):
             "workspace_id": workspace["id"],
             "name": "Empty Project",
             "idea": "No data yet",
-            "deadline": "2026-08-15",
+            "deadline": _DATES.project_deadline,
             "deliverables": "TBD",
             "created_by": owner["id"],
         },
@@ -242,8 +247,8 @@ def test_empty_risk_analysis_no_crash(client: TestClient):
             "project_id": project["id"],
             "name": "Planning",
             "goal": "Define scope",
-            "start_date": "2026-08-01",
-            "end_date": "2026-08-10",
+            "start_date": _DATES.stage_start,
+            "end_date": _DATES.stage_end,
             "deliverable": "Plan doc",
         },
     ).json()
@@ -277,7 +282,7 @@ def test_demo_replan_fallback_has_minimal_actionable_proposal(client: TestClient
 
     replan_output = {
         "before": {"summary": "项目超期"},
-        "after": {"summary": "调整里程碑", "deadline": "2026-07-28"},
+        "after": {"summary": "调整里程碑", "deadline": _DATES.replanned_deadline},
         "impact": "给予一周缓冲",
         "stage_adjustments": [],
         "task_changes": [

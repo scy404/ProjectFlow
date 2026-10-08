@@ -127,6 +127,9 @@ def test_evaluation_seed_rejects_relative_and_outside_database_paths(
 
 
 def test_evaluation_seed_rejects_upload_symlink_escape(monkeypatch, tmp_path):
+    from app.tests.test_support import require_symlink_capability
+
+    require_symlink_capability(tmp_path)
     temp_root = os.path.realpath(str(tmp_path))
     _configure_evaluation(monkeypatch, temp_root)
     _write_marker(temp_root)
