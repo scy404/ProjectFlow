@@ -174,6 +174,46 @@ const ADVISORY_WRITE_DEFAULTS = {
   },
 };
 
+const ANALYSIS_WRITE_DEFAULTS = {
+  schemaVersion: 1,
+  version: 1,
+  riskCategory: "analysis" as const,
+  modelCallable: true,
+  sidecarOnly: false,
+  humanTriggeredOnly: false,
+  annotations: {
+    readOnly: false,
+    destructive: false,
+    idempotent: true,
+    openWorld: false,
+  },
+  execution: {
+    mode: "sequential" as const,
+    concurrencyGroup: "project_analysis",
+    maxConcurrency: 1,
+    providerParallelToolCallsAllowed: false,
+  },
+  timeoutMs: 120000,
+  retry: { maxAttempts: 1, retryOn: ["timeout", "network_error"] },
+  resultLimit: { maxBytes: 65536, redaction: "secrets" as const },
+  effects: {
+    effectType: "event_write" as const,
+    idempotencyKeyRequired: true,
+    replaySafe: true,
+  },
+  privacy: {
+    dataClassification: "project_sensitive" as const,
+    traceIncludeInputs: false,
+    traceIncludeOutputs: false,
+  },
+  errors: { modelVisibleErrorPolicy: "normalized_summary" as const },
+  resume: {
+    manifestVersion: 1,
+    incompatibleVersionPolicy: "regenerate" as const,
+  },
+  trace: { emits: ["tool.started", "tool.completed"] },
+};
+
 // ─── Tool: get_workspace_state ────────────────────────────────────────────────
 
 const getWorkspaceStateManifest: ProjectFlowToolManifest = {
@@ -773,6 +813,50 @@ const createCheckinManifest: ProjectFlowToolManifest = {
   },
 };
 
+// ─── Analysis Event Tool: generate_retrospective ───────────────────────────
+
+const generateRetrospectiveManifest: ProjectFlowToolManifest = {
+  ...ANALYSIS_WRITE_DEFAULTS,
+  name: "generate_retrospective",
+  description: "基于项目真实状态生成结构化复盘，并将结果作为可追溯分析事件保存；不修改项目主事实。",
+  inputSchema: {
+    type: "object",
+    required: ["output"],
+    properties: {
+      output: {
+        type: "object",
+        required: [
+          "project_summary",
+          "key_achievements",
+          "challenges",
+          "lessons_learned",
+          "overall_assessment",
+          "reason",
+          "requires_confirmation",
+        ],
+        properties: {
+          project_summary: { type: "string", minLength: 1 },
+          key_achievements: { type: "array", items: { type: "string", minLength: 1 } },
+          challenges: { type: "array", items: { type: "string", minLength: 1 } },
+          lessons_learned: { type: "array", items: { type: "string", minLength: 1 } },
+          overall_assessment: { type: "string", minLength: 1 },
+          reason: { type: "string", minLength: 1 },
+          requires_confirmation: { type: "boolean", const: false },
+        },
+      },
+    },
+  },
+  outputSchema: {
+    type: "object",
+    description: "ProjectFlowToolResult — 保存 retrospective AgentEvent，返回 links.agent_event_id。",
+  },
+  backend: {
+    owner: "fastapi",
+    endpoint: "POST /internal/agent-tools/retrospective",
+    method: "POST",
+  },
+};
+
 // ─── Export: all tools ───────────────────────────────────────────────────────
 
 /**
@@ -890,6 +974,14 @@ export function createCheckinTool(fastapiClient: FastapiClient): RegisteredTool 
   };
 }
 
+/** Build the structured retrospective analysis-event tool. */
+export function createRetrospectiveTool(fastapiClient: FastapiClient): RegisteredTool {
+  return {
+    manifest: generateRetrospectiveManifest,
+    execute: createFastapiToolExecutor(fastapiClient, "retrospective"),
+  };
+}
+
 /** Build all advisory-write tools (risk, checkin, analysis). */
 export function createAdvisoryTools(fastapiClient: FastapiClient): RegisteredTool[] {
   return [
@@ -905,5 +997,6 @@ export function createDefaultProjectFlowTools(fastapiClient: FastapiClient): Reg
     ...createReadOnlyTools(fastapiClient),
     ...createProposalTools(fastapiClient),
     ...createAdvisoryTools(fastapiClient),
+    createRetrospectiveTool(fastapiClient),
   ];
 }

@@ -157,13 +157,19 @@ describe("ProjectMemoryPanel", () => {
   });
 
   it("exports and previews Markdown when export button is clicked", async () => {
+    const markdown = "# Demo · 项目记忆\n\n> 仅包含当前身份可见内容\n\n- 当前有效：1 条";
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.includes("/projects/project-1/memories?viewer_user_id=user-1")) {
         return jsonResponse([]);
       }
       if (url.includes("/projects/project-1/memories.md?viewer_user_id=user-1")) {
-        return new Response("# 项目记忆导出", { status: 200 });
+        return new Response(markdown, { status: 200 });
       }
       throw new Error(`Unexpected request ${url}`);
     });
@@ -182,7 +188,12 @@ describe("ProjectMemoryPanel", () => {
       expect(screen.getByText("Markdown 导出预览")).toBeTruthy();
     });
 
-    expect(screen.getByText("# 项目记忆导出")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Demo · 项目记忆" })).toBeTruthy();
+    expect(screen.queryByText("# Demo · 项目记忆")).toBeNull();
+    expect(screen.getByText("仅包含当前身份可见内容")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "复制" }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(markdown));
   });
 
   it("renders member-only memories for the subject viewer", async () => {

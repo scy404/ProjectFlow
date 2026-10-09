@@ -2,10 +2,9 @@
 
 import { useState } from "react";
 import { AlertCircle, CheckCircle2, Copy, Download, Loader2, RefreshCw } from "lucide-react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 
 import { Button } from "@/components/ui/button";
+import { MarkdownPreview } from "@/components/ui/markdown-preview";
 import {
   Select,
   SelectContent,
@@ -139,8 +138,8 @@ export function ExportPanel({ projectId }: ExportPanelProps) {
               </Button>
             </div>
           </div>
-          <div className="prose prose-sm mt-2 max-h-[36rem] max-w-none overflow-auto rounded-md bg-ink/5 p-4 text-ink/80">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{result.markdown}</ReactMarkdown>
+          <div className="custom-scrollbar mt-2 max-h-[36rem] overflow-auto rounded-xl border border-neutral-200 bg-neutral-50/60 p-5 sm:p-6">
+            <MarkdownPreview markdown={result.markdown} />
           </div>
           <p className="mt-2 text-xs text-ink/45">
             事实快照：{result.facts.metrics.tasks_completed}/{result.facts.metrics.tasks_total} 个任务完成，

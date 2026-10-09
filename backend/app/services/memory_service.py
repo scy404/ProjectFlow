@@ -18,9 +18,9 @@ from sqlmodel import Session, select
 from app.agent.memory.extractor import (
     EXTRACTOR_VERSION,
     ProjectMemoryCandidate,
+    extract_assignment_confirmed,
     extract_direction_card_confirmed,
     extract_proposal_rejected,
-    extract_assignment_confirmed,
     extract_replan_confirmed,
     extract_replan_rejected,
 )
@@ -32,8 +32,8 @@ from app.models import (
     Project,
     ProjectMemory,
     ProjectMemorySync,
-    Task,
     Stage,
+    Task,
     User,
     WorkspaceMembership,
 )
@@ -575,9 +575,11 @@ def export_memories_markdown(
     *,
     project_name: str,
 ) -> str:
-    """按 5 个主题聚合渲染 Markdown。"""
+    """按主题渲染适合阅读和下载的 Markdown。"""
     lines: list[str] = []
-    lines.append(f"# 项目「{project_name}」的记忆")
+    lines.append(f"# {project_name} · 项目记忆")
+    lines.append("")
+    lines.append("> 仅包含当前身份有权查看的项目决策记忆；历史内容仅用于追溯，不代表当前有效结论。")
     lines.append("")
 
     # Separate active and historical
@@ -592,6 +594,16 @@ def export_memories_markdown(
         or (m.status == "active" and m.valid_until is not None and m.valid_until < now)
     ]
 
+    lines.extend([
+        "## 记忆概览",
+        "",
+        f"- **当前有效**：{len(active_memories)} 条",
+        f"- **历史记录**：{len(historical_memories)} 条",
+        "",
+        "---",
+        "",
+    ])
+
     for topic_title, type_set in _TOPIC_GROUPS:
         if topic_title == "被替代或归档的历史判断":
             group = historical_memories
@@ -604,16 +616,27 @@ def export_memories_markdown(
         lines.append(f"## {topic_title}")
         lines.append("")
 
-        for mem in group:
-            lines.append(f"### {mem.content}")
-            lines.append(f"- 理由：{mem.rationale}")
-            lines.append(f"- 来源：{_SOURCE_TYPE_CN.get(mem.source_type, mem.source_type)}")
+        for index, mem in enumerate(group, start=1):
+            lines.append(f"### {index}. 记忆条目")
+            lines.append("")
+            content_lines = (mem.content or "").splitlines() or [""]
+            lines.extend(f"> {line}" if line else ">" for line in content_lines)
+            lines.append("")
+            lines.append(f"**形成原因**：{mem.rationale}")
+            lines.append("")
             expired = mem.status == "active" and mem.valid_until is not None and mem.valid_until < now
             status_label = "已过期" if expired else _STATUS_CN.get(mem.status, mem.status)
-            lines.append(f"- 状态：{status_label}")
-            valid_str = mem.valid_until.isoformat() if mem.valid_until else "长期"
-            lines.append(f"- 有效期：{valid_str}")
-            lines.append(f"- 可见范围：{_VISIBILITY_CN.get(mem.visibility, mem.visibility)}")
+            valid_str = mem.valid_until.date().isoformat() if mem.valid_until else "长期"
+            lines.append(
+                " | ".join([
+                    f"**来源**：{_SOURCE_TYPE_CN.get(mem.source_type, mem.source_type)}",
+                    f"**状态**：{status_label}",
+                    f"**有效期**：{valid_str}",
+                    f"**可见范围**：{_VISIBILITY_CN.get(mem.visibility, mem.visibility)}",
+                ])
+            )
             lines.append("")
 
-    return "\n".join(lines)
+        lines.extend(["---", ""])
+
+    return "\n".join(lines).rstrip() + "\n"

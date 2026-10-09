@@ -511,7 +511,7 @@ def test_team_visibility_all_members_can_see(client: TestClient):
 
 
 def test_markdown_export_format(client: TestClient):
-    """Markdown 导出格式正确，包含项目名和记忆内容。"""
+    """Markdown 导出使用可读结构，不把正文或内部 ID 当作标题输出。"""
     workspace, project, owner, *_ = _create_full_fixture(client)
     _confirm_clarify(client, workspace["id"], project["id"], owner["id"])
 
@@ -521,10 +521,25 @@ def test_markdown_export_format(client: TestClient):
     )
     assert md_resp.status_code == 200
     markdown = md_resp.text
-    # Should contain project name
-    assert project["name"] in markdown
-    # Should have heading structure
-    assert "#" in markdown
+    assert f"# {project['name']} · 项目记忆" in markdown
+    assert "> 仅包含当前身份有权查看的项目决策记忆" in markdown
+    assert "## 记忆概览" in markdown
+    assert "- **当前有效**：" in markdown
+    assert "- **历史记录**：" in markdown
+    assert "### 1. 记忆条目" in markdown
+    assert "**形成原因**" in markdown
+    assert "**来源**" in markdown
+    assert "**状态**" in markdown
+    assert "**有效期**" in markdown
+    assert "**可见范围**" in markdown
+
+    memories = client.get(
+        f"/api/projects/{project['id']}/memories",
+        params={"viewer_user_id": owner["id"]},
+    ).json()
+    assert memories
+    assert f"### {memories[0]['content']}" not in markdown
+    assert memories[0]["id"] not in markdown
 
 
 def test_memory_extraction_failure_does_not_block_confirm(client: TestClient):

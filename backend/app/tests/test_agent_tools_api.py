@@ -368,8 +368,115 @@ _RISK_ANALYSIS_OUTPUT = {
     ],
 }
 
+_RETROSPECTIVE_OUTPUT = {
+    "project_summary": "项目已完成核心功能并进入验证阶段。",
+    "key_achievements": ["核心流程可运行"],
+    "challenges": ["验证样本仍然有限"],
+    "lessons_learned": ["优先记录可追溯证据"],
+    "overall_assessment": "当前成果可演示，仍需继续验证。",
+    "reason": "基于任务、风险、验证结果和时间线记录。",
+    "requires_confirmation": False,
+}
+
 
 class TestInternalAgentTools:
+    def test_retrospective_persists_only_structured_agent_event(self, client, test_engine):
+        _seed(test_engine)
+        with Session(test_engine) as session:
+            before_project = session.get(Project, "p1").model_dump()
+            before_stage_count = len(session.exec(select(Stage)).all())
+            before_task_count = len(session.exec(select(Task)).all())
+            before_proposal_count = len(session.exec(select(AgentProposal)).all())
+
+        response = client.post(
+            "/internal/agent-tools/retrospective",
+            json=_envelope("generate_retrospective", {"output": _RETROSPECTIVE_OUTPUT}),
+        )
+
+        assert response.status_code == 200, response.text
+        data = response.json()
+        assert data["status"] == "success"
+        assert data["side_effect_status"] == "event_persisted"
+        assert data["data"] == _RETROSPECTIVE_OUTPUT
+        event_id = data["links"]["agent_event_id"]
+        assert event_id
+
+        with Session(test_engine) as session:
+            event = session.get(AgentEvent, event_id)
+            assert event is not None
+            assert event.event_type == AgentEventType.retrospective
+            assert event.get_output_snapshot()["project_summary"] == _RETROSPECTIVE_OUTPUT["project_summary"]
+            assert session.get(Project, "p1").model_dump() == before_project
+            assert len(session.exec(select(Stage)).all()) == before_stage_count
+            assert len(session.exec(select(Task)).all()) == before_task_count
+            assert len(session.exec(select(AgentProposal)).all()) == before_proposal_count
+
+    def test_retrospective_reuses_event_for_same_idempotency_key(self, client, test_engine):
+        _seed(test_engine)
+        envelope = _envelope("generate_retrospective", {"output": _RETROSPECTIVE_OUTPUT})
+
+        first = client.post("/internal/agent-tools/retrospective", json=envelope)
+        second = client.post("/internal/agent-tools/retrospective", json=envelope)
+
+        assert first.status_code == 200
+        assert second.status_code == 200
+        assert first.json()["links"]["agent_event_id"] == second.json()["links"]["agent_event_id"]
+        with Session(test_engine) as session:
+            events = session.exec(
+                select(AgentEvent).where(AgentEvent.event_type == AgentEventType.retrospective)
+            ).all()
+            assert len(events) == 1
+
+    @pytest.mark.parametrize(
+        "invalid_output",
+        [
+            {key: value for key, value in _RETROSPECTIVE_OUTPUT.items() if key != "key_achievements"},
+            {**_RETROSPECTIVE_OUTPUT, "challenges": "不是数组"},
+            {**_RETROSPECTIVE_OUTPUT, "requires_confirmation": True},
+        ],
+    )
+    def test_retrospective_rejects_invalid_contract(self, client, test_engine, invalid_output):
+        _seed(test_engine)
+        response = client.post(
+            "/internal/agent-tools/retrospective",
+            json=_envelope("generate_retrospective", {"output": invalid_output}),
+        )
+
+        assert response.status_code == 200
+        assert response.json()["status"] == "validation_error"
+        with Session(test_engine) as session:
+            events = session.exec(
+                select(AgentEvent).where(AgentEvent.event_type == AgentEventType.retrospective)
+            ).all()
+            assert events == []
+
+    def test_retrospective_rejects_cross_project_run_context(self, client, test_engine):
+        _seed(test_engine)
+        with Session(test_engine) as session:
+            session.add(Workspace(id="ws2", name="其他工作区", owner_user_id="u1"))
+            session.add(WorkspaceMembership(workspace_id="ws2", user_id="u1", role="owner"))
+            session.add(
+                Project(
+                    id="p2",
+                    workspace_id="ws2",
+                    name="其他项目",
+                    idea="隔离测试",
+                    deadline=D62,
+                    deliverables="隔离结果",
+                    created_by="u1",
+                )
+            )
+            session.commit()
+        envelope = _envelope("generate_retrospective", {"output": _RETROSPECTIVE_OUTPUT})
+        envelope["project_id"] = "p2"
+        envelope["workspace_id"] = "ws2"
+
+        response = client.post("/internal/agent-tools/retrospective", json=envelope)
+
+        assert response.status_code == 200
+        assert response.json()["status"] == "failed"
+        assert response.json()["error"]["code"] == "RETROSPECTIVE_CONTEXT_MISMATCH"
+
     def test_workspace_state_tool(self, client, test_engine):
         _seed(test_engine)
         resp = client.post("/internal/agent-tools/workspace-state", json=_envelope("workspace-state", {"workspace_id": "ws1"}))

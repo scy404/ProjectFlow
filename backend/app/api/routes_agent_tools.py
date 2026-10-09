@@ -46,6 +46,7 @@ ALL_AGENT_TOOLS = {
     "create-checkin",
     "direction-card-proposal",
     "task-breakdown-proposal",
+    "retrospective",
 }
 
 

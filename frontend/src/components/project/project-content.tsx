@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import {
   CalendarDays,
@@ -20,6 +20,7 @@ import {
   BookOpen,
   Bot,
   Info,
+  AlertCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { MultilineText } from "@/components/ui/multiline-text";
@@ -42,7 +43,14 @@ import { TaskStatusUpdateList } from "@/components/task/task-status-update";
 import { WorkspaceContent } from "./workspace-content";
 import { MyTasksView, TeamTasksView } from "./project-task-views";
 import { ProjectMemoryPanel } from "./project-memory-panel";
-import type { AddResourceRequest, ProjectState, SubmitValidationResultRequest, ThinkingLevel } from "@/lib/types";
+import type {
+  AddResourceRequest,
+  AgentEvent,
+  ProjectState,
+  RetrospectiveSummary,
+  SubmitValidationResultRequest,
+  ThinkingLevel,
+} from "@/lib/types";
 import { ACTION_LABELS, inferRecommendedAction } from "./project-actions";
 import type { AgentAction } from "./project-actions";
 import type { ProjectView } from "./project-sidebar";
@@ -705,9 +713,9 @@ function ViewRenderer({
           <OutcomeMetricsPanel projectId={project.id} isDemo={project.is_demo} />
           <RetroSummaryPanel
             project={project}
+            timeline={timeline}
             pending={Boolean(pendingAction)}
             currentUserId={currentUserId}
-            onRunAgent={onRunAgent}
           />
           <AgentTimeline events={timeline} />
           <ExportPanel projectId={project.id} />
@@ -719,38 +727,97 @@ function ViewRenderer({
   }
 }
 
-function RetroSummaryPanel({
+type RetrospectiveDisplay = {
+  summary: RetrospectiveSummary;
+  status: AgentEvent["status"];
+  createdAt?: string;
+};
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+
+export function parseRetrospectiveSummary(value: unknown): RetrospectiveSummary | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+
+  const candidate = value as Record<string, unknown>;
+  const requiredStrings = [candidate.project_summary, candidate.overall_assessment, candidate.reason];
+  if (requiredStrings.some((item) => typeof item !== "string" || item.trim().length === 0)) {
+    return null;
+  }
+  if (
+    !isStringArray(candidate.key_achievements) ||
+    !isStringArray(candidate.challenges) ||
+    !isStringArray(candidate.lessons_learned) ||
+    candidate.requires_confirmation !== false
+  ) {
+    return null;
+  }
+
+  return {
+    project_summary: candidate.project_summary as string,
+    key_achievements: candidate.key_achievements,
+    challenges: candidate.challenges,
+    lessons_learned: candidate.lessons_learned,
+    overall_assessment: candidate.overall_assessment as string,
+    reason: candidate.reason as string,
+    requires_confirmation: false,
+  };
+}
+
+function findLatestRetrospective(timeline: AgentEvent[]): RetrospectiveDisplay | null {
+  const candidates = timeline
+    .filter((event) => event.event_type === "retrospective" && event.status !== "failed")
+    .sort((left, right) => Date.parse(right.created_at) - Date.parse(left.created_at));
+
+  for (const event of candidates) {
+    const summary = parseRetrospectiveSummary(event.output_snapshot);
+    if (summary) return { summary, status: event.status, createdAt: event.created_at };
+  }
+  return null;
+}
+
+const RETROSPECTIVE_STATUS: Record<AgentEvent["status"], { label: string; className: string }> = {
+  success: { label: "正常生成", className: "border-moss/30 bg-moss/10 text-moss" },
+  repaired: { label: "修复后生成", className: "border-citron/40 bg-citron/15 text-ink" },
+  fallback: { label: "基础回退", className: "border-coral/30 bg-coral/10 text-coral" },
+  failed: { label: "生成失败", className: "border-coral/30 bg-coral/10 text-coral" },
+};
+
+export function RetroSummaryPanel({
   project,
+  timeline,
   pending,
   currentUserId,
-  onRunAgent,
 }: {
   project: ProjectState["project"];
+  timeline: AgentEvent[];
   pending: boolean;
   currentUserId?: string;
-  onRunAgent?: (action: AgentAction, thinkingLevel?: ThinkingLevel, model?: { provider: string; name: string }) => void;
 }) {
-  const [summary, setSummary] = useState<{
-    project_summary: string;
-    key_achievements: string[];
-    challenges: string[];
-    lessons_learned: string[];
-    overall_assessment: string;
-  } | null>(null);
+  const recovered = useMemo(() => findLatestRetrospective(timeline), [timeline]);
+  const [generated, setGenerated] = useState<RetrospectiveDisplay | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const display = generated ?? recovered;
 
   const handleGenerate = async () => {
+    if (!currentUserId) {
+      setError("请先选择当前成员身份，再生成项目复盘。");
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
       const { runRetrospective } = await import("@/lib/api");
-      const result = await runRetrospective(project.id, currentUserId ?? "");
-      if (result.output) {
-        setSummary(result.output as typeof summary);
+      const result = await runRetrospective(project.id, currentUserId);
+      const summary = parseRetrospectiveSummary(result.output);
+      if (!summary) {
+        throw new Error("Agent 返回的复盘结构不完整，已保留上一次成功结果。");
       }
+      setGenerated({ summary, status: result.status, createdAt: new Date().toISOString() });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "生成失败");
+      setError(e instanceof Error ? e.message : "生成失败，已保留上一次成功结果。");
     } finally {
       setLoading(false);
     }
@@ -759,15 +826,18 @@ function RetroSummaryPanel({
   return (
     <>
       <section className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h2 className="text-lg font-bold text-ink">AI 生成复盘</h2>
             <p className="mt-1 text-xs text-ink/50">此区域为 Agent 的叙述性总结，不作为数据库事实指标。</p>
+            {!currentUserId && (
+              <p className="mt-2 text-xs font-medium text-coral">请先在页面顶部选择当前成员身份。</p>
+            )}
           </div>
           <Button
             size="sm"
             className="bg-moss text-white hover:bg-moss/85"
-            disabled={loading || pending}
+            disabled={loading || pending || !currentUserId}
             onClick={handleGenerate}
           >
             {loading ? (
@@ -779,18 +849,32 @@ function RetroSummaryPanel({
         </div>
 
         {error && (
-          <p className="mt-2 text-sm text-coral">{error}</p>
+          <div role="alert" className="mt-4 flex items-start gap-2 rounded-lg border border-coral/25 bg-coral/5 p-3 text-sm text-coral">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+            <div>
+              <p className="font-semibold">本次复盘未生成</p>
+              <p className="mt-0.5 text-ink/65">{error}</p>
+            </div>
+          </div>
         )}
 
-        {summary ? (
+        {display ? (
           <div className="mt-4 space-y-4">
-            <MultilineText text={summary.project_summary} className="text-sm leading-6 text-ink/75" />
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="outline" className={RETROSPECTIVE_STATUS[display.status].className}>
+                {RETROSPECTIVE_STATUS[display.status].label}
+              </Badge>
+              {display.createdAt && (
+                <span className="text-xs text-ink/45">{new Date(display.createdAt).toLocaleString("zh-CN")}</span>
+              )}
+            </div>
+            <MultilineText text={display.summary.project_summary} className="text-sm leading-6 text-ink/75" />
 
-            {summary.key_achievements.length > 0 && (
+            {display.summary.key_achievements.length > 0 && (
               <div>
                 <p className="text-sm font-semibold text-ink">关键成就</p>
                 <ul className="mt-1 space-y-1">
-                  {summary.key_achievements.map((item, i) => (
+                  {display.summary.key_achievements.map((item, i) => (
                     <li key={i} className="flex gap-2 text-sm text-ink/70">
                       <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-moss" />
                       {item}
@@ -800,11 +884,11 @@ function RetroSummaryPanel({
               </div>
             )}
 
-            {summary.challenges.length > 0 && (
+            {display.summary.challenges.length > 0 && (
               <div>
                 <p className="text-sm font-semibold text-ink">挑战与应对</p>
                 <ul className="mt-1 space-y-1">
-                  {summary.challenges.map((item, i) => (
+                  {display.summary.challenges.map((item, i) => (
                     <li key={i} className="flex gap-2 text-sm text-ink/70">
                       <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-citron" />
                       {item}
@@ -814,11 +898,11 @@ function RetroSummaryPanel({
               </div>
             )}
 
-            {summary.lessons_learned.length > 0 && (
+            {display.summary.lessons_learned.length > 0 && (
               <div>
                 <p className="text-sm font-semibold text-ink">经验教训</p>
                 <ul className="mt-1 space-y-1">
-                  {summary.lessons_learned.map((item, i) => (
+                  {display.summary.lessons_learned.map((item, i) => (
                     <li key={i} className="flex gap-2 text-sm text-ink/70">
                       <Lightbulb className="mt-0.5 h-3.5 w-3.5 shrink-0 text-harbor" />
                       {item}
@@ -830,8 +914,9 @@ function RetroSummaryPanel({
 
             <div className="rounded-lg bg-ink/5 p-3">
               <p className="text-sm font-semibold text-ink">整体评价</p>
-              <MultilineText text={summary.overall_assessment} className="mt-1 text-sm text-ink/70" />
+              <MultilineText text={display.summary.overall_assessment} className="mt-1 text-sm text-ink/70" />
             </div>
+            <p className="text-xs leading-5 text-ink/50">生成依据：{display.summary.reason}</p>
           </div>
         ) : !loading && !error ? (
           <p className="mt-3 text-sm text-ink/50">

@@ -53,6 +53,7 @@ const DEFAULT_TOOL_NAMES = [
   "create_checkin",
   "generate_direction_card_proposal",
   "generate_task_breakdown_proposal",
+  "generate_retrospective",
 ];
 
 // Map manifest tool name → internal endpoint tool name (POST /internal/agent-tools/{name})
@@ -69,6 +70,7 @@ const INTERNAL_TOOL_NAME: Record<string, string> = {
   create_checkin: "create-checkin",
   generate_direction_card_proposal: "direction-card-proposal",
   generate_task_breakdown_proposal: "task-breakdown-proposal",
+  generate_retrospective: "retrospective",
 };
 
 const INTERNAL_ENDPOINT: Record<string, string> = {
@@ -85,6 +87,7 @@ const INTERNAL_ENDPOINT: Record<string, string> = {
   create_checkin: "POST /internal/agent-tools/create-checkin",
   generate_direction_card_proposal: "POST /internal/agent-tools/direction-card-proposal",
   generate_task_breakdown_proposal: "POST /internal/agent-tools/task-breakdown-proposal",
+  generate_retrospective: "POST /internal/agent-tools/retrospective",
 };
 
 function makeContext(overrides: Partial<ToolExecutionContext> = {}): ToolExecutionContext {
@@ -532,12 +535,44 @@ describe("projectflow-tools", () => {
     });
   });
 
+  describe("generate_retrospective", () => {
+    it("persists a sequential idempotent analysis event through the retrospective endpoint", async () => {
+      const registry = new ToolRegistry();
+      const client = createStubFastapiClient();
+      registerDefaultTools(registry, client);
+      const tool = registry.get("generate_retrospective")!;
+
+      expect(tool.manifest.riskCategory).toBe("analysis");
+      expect(tool.manifest.effects.effectType).toBe("event_write");
+      expect(tool.manifest.effects.idempotencyKeyRequired).toBe(true);
+      expect(tool.manifest.execution.mode).toBe("sequential");
+      expect(tool.manifest.execution.providerParallelToolCallsAllowed).toBe(false);
+      expect(tool.manifest.backend.endpoint).toBe("POST /internal/agent-tools/retrospective");
+
+      const output = {
+        project_summary: "项目按计划完成了核心闭环。",
+        key_achievements: ["完成核心功能"],
+        challenges: ["资源有限"],
+        lessons_learned: ["先验证高风险假设"],
+        overall_assessment: "具备继续迭代的基础。",
+        reason: "基于项目任务和时间线。",
+        requires_confirmation: false,
+      };
+      await tool.execute({ output }, makeContext({ toolName: "generate_retrospective" }));
+
+      expect(client.calls).toHaveLength(1);
+      expect(client.calls[0]!.toolName).toBe("retrospective");
+      expect(client.calls[0]!.payload.arguments).toEqual({ output });
+      expect(client.calls[0]!.payload.idempotency_key).toBe("run_test:call_test:v1");
+    });
+  });
+
   describe("registerDefaultTools", () => {
     it("registers all default tools into the registry", () => {
       const registry = new ToolRegistry();
       const client = createStubFastapiClient();
       registerDefaultTools(registry, client);
-      expect(registry.size).toBe(13);
+      expect(registry.size).toBe(14);
       for (const name of DEFAULT_TOOL_NAMES) {
         expect(registry.has(name)).toBe(true);
       }
@@ -547,14 +582,14 @@ describe("projectflow-tools", () => {
       const registry = new ToolRegistry();
       registerDefaultTools(registry, createStubFastapiClient());
       const manifests = registry.getModelCallableManifests();
-      expect(manifests.length).toBe(13);
+      expect(manifests.length).toBe(14);
     });
 
     it("getManifests returns all default manifests", () => {
       const registry = new ToolRegistry();
       registerDefaultTools(registry, createStubFastapiClient());
       const manifests = registry.getManifests();
-      expect(manifests.length).toBe(13);
+      expect(manifests.length).toBe(14);
       const names = manifests.map((m: ProjectFlowToolManifest) => m.name).sort();
       expect(names).toEqual([...DEFAULT_TOOL_NAMES].sort());
     });

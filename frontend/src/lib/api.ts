@@ -959,7 +959,7 @@ const SKILL_NAME_MAP: Record<string, string> = {
   "risk-analysis": "risk-analysis",
   replan: "risk-replan",
   negotiate: "assignment-planning",
-  retrospective: "project-status",
+  retrospective: "project-retrospective",
 };
 
 const ENDPOINT_EVENT_TYPE_MAP: Record<string, string> = {
@@ -972,7 +972,7 @@ const ENDPOINT_EVENT_TYPE_MAP: Record<string, string> = {
   "risk-analysis": "risk",
   replan: "replan",
   negotiate: "assign",
-  retrospective: "replan",
+  retrospective: "retrospective",
 };
 
 async function runAgentFlow(
@@ -1047,6 +1047,7 @@ async function runAgentFlow(
       tool_name: string;
       side_effect_status: string;
       observation: string;
+      agent_event_id?: string;
       proposal_id?: string;
       created_ids?: string[];
     }>;
@@ -1076,17 +1077,21 @@ async function runAgentFlow(
   // Extract tool_results from poll response for visibility
   const toolResults = lastPollData?.tool_results ?? [];
   const successfulResults = toolResults.filter(
-    (tr) => tr.side_effect_status === "advisory_record_persisted" || tr.side_effect_status === "proposal_persisted",
+    (tr) => tr.side_effect_status === "advisory_record_persisted"
+      || tr.side_effect_status === "proposal_persisted"
+      || tr.side_effect_status === "event_persisted",
   );
 
   if (runStatus === "completed" || successfulResults.length > 0) {
     // Extract created_ids, proposal_id, observations from tool_results
     const createdIds: string[] = [];
     let proposalId: string | null = null;
+    let agentEventId: string | null = null;
     const observations: string[] = [];
 
     for (const tr of toolResults) {
       if (tr.proposal_id) proposalId = tr.proposal_id;
+      if (tr.agent_event_id) agentEventId = tr.agent_event_id;
       if (tr.created_ids) createdIds.push(...tr.created_ids);
       if (tr.observation) observations.push(tr.observation);
     }
@@ -1096,7 +1101,12 @@ async function runAgentFlow(
       const timeline = await listTimelineByProject(projectId);
       // BUG FIX: Use startTime (not startTime - 30s) as lower bound
       // to avoid matching events from a previous run
-      const recentEvent = timeline.find(e => new Date(e.created_at).getTime() >= startTime);
+      const recentEvent = agentEventId
+        ? timeline.find((event) => event.id === agentEventId)
+        : timeline.find(
+            (event) => event.event_type === ENDPOINT_EVENT_TYPE_MAP[endpoint]
+              && new Date(event.created_at).getTime() >= startTime,
+          );
       if (recentEvent) {
         const output = (recentEvent.output_snapshot ?? {}) as Record<string, unknown>;
         // Merge tool_results into output for visibility

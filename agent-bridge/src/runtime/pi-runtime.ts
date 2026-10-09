@@ -266,6 +266,7 @@ function toPiTool(
           toolName,
           sideEffectStatus: normalized.sideEffectStatus,
           observation: normalized.observation,
+          ...(normalized.links?.agentEventId ? { agentEventId: normalized.links.agentEventId } : {}),
           ...(normalized.links?.proposalId ? { proposalId: normalized.links.proposalId } : {}),
           ...(normalized.links?.createdIds?.length ? { createdIds: normalized.links.createdIds } : {}),
         });

@@ -33,6 +33,7 @@ export async function handleGetRun(
       tool_name: tr.toolName,
       side_effect_status: tr.sideEffectStatus,
       observation: tr.observation,
+      ...(tr.agentEventId ? { agent_event_id: tr.agentEventId } : {}),
       ...(tr.proposalId ? { proposal_id: tr.proposalId } : {}),
       ...(tr.createdIds?.length ? { created_ids: tr.createdIds } : {}),
     })),

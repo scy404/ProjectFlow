@@ -46,6 +46,7 @@ export interface ToolResultSummary {
   toolName: string;
   sideEffectStatus: SideEffectStatus;
   observation: string;
+  agentEventId?: string;
   proposalId?: string;
   createdIds?: string[];
 }

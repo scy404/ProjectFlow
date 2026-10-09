@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     feature_task_breakdown_proposal: bool = True
     feature_create_risk: bool = True
     feature_create_checkin: bool = True
+    feature_retrospective: bool = True
 
     # ── T42 ProjectMemory Vector Retrieval ───────────────────────────
     memory_vector_enabled: bool = False  # 是否优先使用向量检索
@@ -69,6 +70,8 @@ class Settings(BaseSettings):
             tools.add("create-risk")
         if self.feature_create_checkin:
             tools.add("create-checkin")
+        if self.feature_retrospective:
+            tools.add("retrospective")
         return tools
 
 
