@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 from sqlmodel import Session, select
 
 from app.core.db_utils import require_row
@@ -46,6 +48,7 @@ def update_action_card_status(
     if card is None:
         raise ValueError("Action card not found")
     card.status = status
+    card.updated_at = datetime.now(UTC)
     session.add(card)
     session.commit()
     session.refresh(card)

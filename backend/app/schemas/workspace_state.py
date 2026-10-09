@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 
 from pydantic import BaseModel, Field
 
@@ -107,6 +107,34 @@ class ResourceState(BaseModel):
     created_at: str
 
 
+class RiskState(BaseModel):
+    id: str
+    stage_id: str | None = None
+    task_id: str | None = None
+    type: str
+    severity: str
+    title: str
+    description: str
+    recommendation: str
+    evidence_refs: list[EvidenceRef] = Field(default_factory=list)
+    status: str
+    updated_at: datetime
+
+
+class ActionCardState(BaseModel):
+    id: str
+    stage_id: str | None = None
+    task_id: str | None = None
+    user_id: str | None = None
+    type: str
+    title: str
+    content: str
+    reason: str
+    evidence_refs: list[EvidenceRef] = Field(default_factory=list)
+    status: str
+    updated_at: datetime
+
+
 class ProjectState(BaseModel):
     id: str
     name: str
@@ -126,6 +154,8 @@ class ProjectState(BaseModel):
     assignment_responses: list[AssignmentResponseState] = Field(default_factory=list)
     assignment_negotiations: list[AssignmentNegotiationState] = Field(default_factory=list)
     resources: list[ResourceState] = Field(default_factory=list)
+    risks: list[RiskState] = Field(default_factory=list)
+    action_cards: list[ActionCardState] = Field(default_factory=list)
 
 
 class WorkspaceStateResponse(BaseModel):

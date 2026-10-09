@@ -4,6 +4,8 @@ import {
   createConversation,
   exportProjectMemoriesMarkdown,
   exportReviewSummary,
+  generateProjectExport,
+  getProjectMetrics,
   getAgentConversation,
   getConversationDetail,
   getConversationMessages,
@@ -158,6 +160,35 @@ describe("frontend API layer", () => {
       markdown: "# ProjectFlow 评审摘要",
     });
     expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it("uses the unified export endpoint with an explicit export type", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(String(input)).toMatch(/\/projects\/project-1\/exports$/);
+      expect(init?.method).toBe("POST");
+      expect(JSON.parse(String(init?.body))).toEqual({ export_type: "opc_outcome" });
+      return jsonResponse({ export_type: "opc_outcome", markdown: "# OPC", facts: {} });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(generateProjectExport("project-1", "opc_outcome")).resolves.toMatchObject({
+      export_type: "opc_outcome",
+      markdown: "# OPC",
+    });
+  });
+
+  it("loads database-derived project metrics", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      expect(String(input)).toMatch(/\/projects\/project-1\/metrics$/);
+      return jsonResponse({ project_id: "project-1", tasks_total: 2, tasks_completed: 1 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(getProjectMetrics("project-1")).resolves.toMatchObject({
+      project_id: "project-1",
+      tasks_total: 2,
+      tasks_completed: 1,
+    });
   });
 
   it("loads the active project agent conversation", async () => {

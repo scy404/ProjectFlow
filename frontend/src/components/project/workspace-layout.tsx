@@ -9,6 +9,7 @@ import { WorkspaceContent } from "./workspace-content";
 import { AgentConversationPage } from "./agent/AgentConversationPage";
 import type { AddResourceRequest, AgentArtifact, AgentConversation, AgentConversationSummary, AgentStreamPhase, AgentStreamTurn, ArchivedAgentStreamTurn, AgentSuggestion, ProjectState, SubmitValidationResultRequest, WorkspaceState, ThinkingLevel } from "@/lib/types";
 import type { AgentAction } from "./project-actions";
+import { EvidenceResolverProvider } from "@/components/ui/evidence-drawer";
 
 interface WorkspaceLayoutProps {
   workspaceId: string;
@@ -287,32 +288,34 @@ export function WorkspaceLayout({
             onRunAgent={onRunAgent}
           />
         ) : (
-          <ProjectContent
-            state={projectState}
-            currentUserId={currentUserId}
-            pendingAction={pendingAction}
-            showWorkspace={false}
-            currentView={viewParam ?? "overview"}
-            onShowWorkspace={handleShowWorkspace}
-            onNavigateView={onNavigateView}
-            onRunAgent={onRunAgent}
-            onRespondToAssignment={onRespondToAssignment}
-            onStartNegotiation={onStartNegotiation}
-            onResolveNegotiation={onResolveNegotiation}
-            onFinalizeAssignments={onFinalizeAssignments}
-            onSubmitCheckin={onSubmitCheckin}
-            onUpdateTaskStatus={onUpdateTaskStatus}
-            onResolveRisk={onResolveRisk}
-            onAcceptRisk={onAcceptRisk}
-            onIgnoreRisk={onIgnoreRisk}
-            onDismissActionCard={onDismissActionCard}
-            onCompleteActionCard={onCompleteActionCard}
-            onConfirmProposal={onConfirmProposal}
-            onRejectProposal={onRejectProposal}
-            onAddResource={onAddResource}
-            onDeleteResource={onDeleteResource}
-            onSubmitValidationResult={onSubmitValidationResult}
-          />
+          <EvidenceResolverProvider state={projectState}>
+            <ProjectContent
+              state={projectState}
+              currentUserId={currentUserId}
+              pendingAction={pendingAction}
+              showWorkspace={false}
+              currentView={viewParam ?? "overview"}
+              onShowWorkspace={handleShowWorkspace}
+              onNavigateView={onNavigateView}
+              onRunAgent={onRunAgent}
+              onRespondToAssignment={onRespondToAssignment}
+              onStartNegotiation={onStartNegotiation}
+              onResolveNegotiation={onResolveNegotiation}
+              onFinalizeAssignments={onFinalizeAssignments}
+              onSubmitCheckin={onSubmitCheckin}
+              onUpdateTaskStatus={onUpdateTaskStatus}
+              onResolveRisk={onResolveRisk}
+              onAcceptRisk={onAcceptRisk}
+              onIgnoreRisk={onIgnoreRisk}
+              onDismissActionCard={onDismissActionCard}
+              onCompleteActionCard={onCompleteActionCard}
+              onConfirmProposal={onConfirmProposal}
+              onRejectProposal={onRejectProposal}
+              onAddResource={onAddResource}
+              onDeleteResource={onDeleteResource}
+              onSubmitValidationResult={onSubmitValidationResult}
+            />
+          </EvidenceResolverProvider>
         )}
       </motion.main>
 

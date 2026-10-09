@@ -18,6 +18,14 @@ from app.models.task import Task
 from app.models.timeline import AgentEvent
 from app.models.user import User
 from app.models.workspace import Workspace
+from app.schemas.evidence import EvidenceRef
+from app.schemas.export import (
+    ExportValidationFact,
+    ProjectExportFacts,
+    ProjectExportRead,
+    ProjectExportType,
+)
+from app.services.metrics_service import get_project_metrics
 from app.services.project_service import normalize_direction_card
 
 
@@ -35,18 +43,35 @@ def _json_value(value: Any, default: Any) -> Any:
 
 
 STATUS_ZH = {
-    "draft": "草稿", "active": "进行中", "at_risk": "有风险", "completed": "已完成",
-    "pending": "待开始", "not_started": "未开始", "in_progress": "进行中",
-    "done": "已完成", "blocked": "受阻", "open": "待处理", "accepted": "已接受",
-    "ignored": "已忽略", "resolved": "已解决", "proposed": "待确认",
-    "owner_confirmed": "已确认", "owner_rejected": "已拒绝",
-    "negotiating": "协调中", "finalized": "已定稿",
+    "draft": "草稿",
+    "active": "进行中",
+    "at_risk": "有风险",
+    "completed": "已完成",
+    "pending": "待开始",
+    "not_started": "未开始",
+    "in_progress": "进行中",
+    "done": "已完成",
+    "blocked": "受阻",
+    "open": "待处理",
+    "accepted": "已接受",
+    "ignored": "已忽略",
+    "resolved": "已解决",
+    "proposed": "待确认",
+    "owner_confirmed": "已确认",
+    "owner_rejected": "已拒绝",
+    "negotiating": "协调中",
+    "finalized": "已定稿",
 }
 SEVERITY_ZH = {"high": "高危", "medium": "中危", "low": "低危"}
 PRIORITY_ZH = {"P0": "P0（最高）", "P1": "P1", "P2": "P2"}
 RISK_TYPE_ZH = {
-    "deadline": "截止风险", "dependency": "依赖风险", "workload": "工作量风险",
-    "scope": "范围风险", "review": "评审风险", "assignment": "分工风险", "checkin": "签到风险",
+    "deadline": "截止风险",
+    "dependency": "依赖风险",
+    "workload": "工作量风险",
+    "scope": "范围风险",
+    "review": "评审风险",
+    "assignment": "分工风险",
+    "checkin": "签到风险",
 }
 
 
@@ -57,7 +82,11 @@ def _enum_value(value: Any) -> str:
     return STATUS_ZH.get(raw, raw)
 
 
-def generate_review_summary(session: Session, project_id: str) -> str:
+def _build_project_markdown(
+    session: Session,
+    project_id: str,
+    export_type: ProjectExportType,
+) -> str:
     project = session.get(Project, project_id)
     if not project:
         raise ValueError("Project not found")
@@ -86,9 +115,14 @@ def generate_review_summary(session: Session, project_id: str) -> str:
         select(CheckInResponse).where(CheckInResponse.project_id == project_id)
     ).all()
 
-    member_ids = {profile.user_id for profile in session.exec(
-        select(MemberProfile).where(MemberProfile.workspace_id == project.workspace_id)
-    ).all()}
+    member_ids = {
+        profile.user_id
+        for profile in session.exec(
+            select(MemberProfile).where(
+                MemberProfile.workspace_id == project.workspace_id
+            )
+        ).all()
+    }
     if workspace:
         member_ids.add(workspace.owner_user_id)
     for task in tasks:
@@ -101,7 +135,11 @@ def generate_review_summary(session: Session, project_id: str) -> str:
         if proposal.backup_owner_user_id:
             member_ids.add(proposal.backup_owner_user_id)
 
-    members = session.exec(select(User).where(User.id.in_(member_ids))).all() if member_ids else []
+    members = (
+        session.exec(select(User).where(User.id.in_(member_ids))).all()
+        if member_ids
+        else []
+    )
     member_map = {member.id: member.display_name for member in members}
 
     profiles = session.exec(
@@ -114,7 +152,7 @@ def generate_review_summary(session: Session, project_id: str) -> str:
             "role_preference": profile.role_preference,
             "available_hours": profile.available_hours_per_week,
             "skills": ", ".join(
-                f"{skill.get('name', '-') }({skill.get('level', '-')})"
+                f"{skill.get('name', '-')}({skill.get('level', '-')})"
                 for skill in skills
                 if isinstance(skill, dict)
             ),
@@ -122,7 +160,11 @@ def generate_review_summary(session: Session, project_id: str) -> str:
 
     now_str = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
     lines: list[str] = [
-        "# ProjectFlow 评审摘要",
+        (
+            "# ProjectFlow OPC 成果报告"
+            if export_type == ProjectExportType.opc_outcome
+            else "# ProjectFlow 评审摘要"
+        ),
         "",
         f"生成时间：{now_str}",
         "",
@@ -174,7 +216,32 @@ def generate_review_summary(session: Session, project_id: str) -> str:
         )
     lines.append("")
 
-    lines.extend(["## 阶段概览", "", "| # | 阶段 | 状态 | 时间 |", "|---|------|------|------|"])
+    validation_tasks = [
+        task for task in tasks if (task.task_kind or "delivery") == "validation"
+    ]
+    if validation_tasks:
+        lines.extend(["## 验证任务与结论", ""])
+        for task in validation_tasks:
+            spec = _json_value(task.validation_spec, {})
+            result = _json_value(task.validation_result, {})
+            lines.append(f"### {task.title}")
+            if spec:
+                lines.append(f"- 假设：{spec.get('hypothesis', '-')}")
+                lines.append(f"- 方法：{spec.get('method', '-')}")
+                lines.append(f"- 成功标准：{spec.get('success_criterion', '-')}")
+                if spec.get("sample_target") is not None:
+                    lines.append(f"- 样本目标：{spec['sample_target']}")
+            if result:
+                lines.append(f"- 观察结果：{result.get('observed_value', '-')}")
+                lines.append(f"- 决策：{result.get('decision', '-')}")
+                lines.append(f"- 结论：{result.get('summary', '-')}")
+            else:
+                lines.append("- 结论：尚未提交验证结果")
+            lines.append("")
+
+    lines.extend(
+        ["## 阶段概览", "", "| # | 阶段 | 状态 | 时间 |", "|---|------|------|------|"]
+    )
     for stage in stages:
         lines.append(
             f"| {stage.order_index + 1} | {stage.name} | {_enum_value(stage.status)} | {stage.start_date} ~ {stage.end_date} |"
@@ -183,7 +250,11 @@ def generate_review_summary(session: Session, project_id: str) -> str:
 
     lines.extend(["## 任务状态", ""])
     for priority in ["P0", "P1", "P2"]:
-        group = [task for task in tasks if str(getattr(task.priority, "value", task.priority)) == priority]
+        group = [
+            task
+            for task in tasks
+            if str(getattr(task.priority, "value", task.priority)) == priority
+        ]
         if not group:
             continue
         lines.extend(
@@ -195,13 +266,24 @@ def generate_review_summary(session: Session, project_id: str) -> str:
             ]
         )
         for task in group:
-            owner = member_map.get(task.owner_user_id, "未分配") if task.owner_user_id else "未分配"
+            owner = (
+                member_map.get(task.owner_user_id, "未分配")
+                if task.owner_user_id
+                else "未分配"
+            )
             lines.append(
                 f"| {task.title} | {owner} | {_enum_value(task.status)} | {task.due_date} | {task.estimated_hours}h |"
             )
         lines.append("")
 
-    lines.extend(["## 团队", "", "| 成员 | 意向 | 可用时间/周 | 技能 |", "|------|------|-------------|------|"])
+    lines.extend(
+        [
+            "## 团队",
+            "",
+            "| 成员 | 意向 | 可用时间/周 | 技能 |",
+            "|------|------|-------------|------|",
+        ]
+    )
     for user_id, name in member_map.items():
         profile = profile_map.get(user_id, {})
         lines.append(
@@ -211,7 +293,12 @@ def generate_review_summary(session: Session, project_id: str) -> str:
 
     lines.extend(["## 风险", ""])
     if risks:
-        lines.extend(["| 严重度 | 类型 | 标题 | 状态 | 建议 |", "|--------|------|------|------|------|"])
+        lines.extend(
+            [
+                "| 严重度 | 类型 | 标题 | 状态 | 建议 |",
+                "|--------|------|------|------|------|",
+            ]
+        )
         for risk in risks:
             recommendation = risk.recommendation[:40]
             suffix = "..." if len(risk.recommendation) > 40 else ""
@@ -225,7 +312,9 @@ def generate_review_summary(session: Session, project_id: str) -> str:
             evidence = _json_value(risk.evidence, [])
             sev_raw = str(getattr(risk.severity, "value", risk.severity))
             type_raw = str(getattr(risk.type, "value", risk.type))
-            lines.append(f"**{risk.title}**（{SEVERITY_ZH.get(sev_raw, sev_raw)}/{RISK_TYPE_ZH.get(type_raw, type_raw)}）")
+            lines.append(
+                f"**{risk.title}**（{SEVERITY_ZH.get(sev_raw, sev_raw)}/{RISK_TYPE_ZH.get(type_raw, type_raw)}）"
+            )
             lines.append(f"- 描述：{risk.description}")
             lines.append("- 证据：")
             for item in evidence:
@@ -256,6 +345,34 @@ def generate_review_summary(session: Session, project_id: str) -> str:
                 lines.append(f"  - 完成标准：{card.completion_standard}")
         lines.append("")
 
+    evidence_groups = (
+        [
+            ("风险", risk.title, risk.evidence_refs)
+            for risk in risks
+            if risk.evidence_refs
+        ]
+        + [
+            ("行动卡", card.title, card.evidence_refs)
+            for card in action_cards
+            if card.evidence_refs
+        ]
+        + [
+            ("分工建议", proposal.reason, proposal.evidence_refs)
+            for proposal in proposals
+            if proposal.evidence_refs
+        ]
+    )
+    if evidence_groups:
+        lines.extend(["## 结构化证据引用", ""])
+        for source_type, source_title, refs in evidence_groups:
+            lines.append(f"### {source_type}：{source_title}")
+            for ref in refs:
+                field = ref.get("field", "项目事实")
+                value = ref.get("value", "-")
+                note = f"（{ref['note']}）" if ref.get("note") else ""
+                lines.append(f"- {field}：{value}{note}")
+            lines.append("")
+
     if checkin_cycles or checkin_responses:
         lines.extend(["## 签到摘要", ""])
         for response in checkin_responses:
@@ -273,27 +390,125 @@ def generate_review_summary(session: Session, project_id: str) -> str:
             "failed": "失败",
         }
         for event in timeline:
-            status_text = status_labels.get(event.status, event.status) if event.status else "未知"
+            status_text = (
+                status_labels.get(event.status, event.status)
+                if event.status
+                else "未知"
+            )
             confirmed = "已确认" if event.user_confirmed else "待确认"
             lines.append(
                 f"- **{_enum_value(event.event_type)}** [{_enum_value(status_text)}/{confirmed}]：{event.reasoning_summary}"
             )
         lines.append("")
 
-    lines.extend(["---", f"*由 ProjectFlow Agent 生成于 {now_str}*"])
-    markdown = "\n".join(lines)
+    lines.extend(
+        [
+            "---",
+            "*AI 生成文字与数据库事实指标已分区展示；所有数量均来自导出时的项目数据库状态。*",
+            f"*由 ProjectFlow 生成于 {now_str}*",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def _collect_evidence_refs(
+    risks: list[Risk],
+    action_cards: list[ActionCard],
+    proposals: list[AssignmentProposal],
+) -> list[EvidenceRef]:
+    result: list[EvidenceRef] = []
+    seen: set[tuple[str, str | None, str, str, str | None]] = set()
+    for row in [*risks, *action_cards, *proposals]:
+        for raw in row.evidence_refs or []:
+            try:
+                ref = EvidenceRef.model_validate(raw)
+            except (TypeError, ValueError):
+                continue
+            key = (ref.entity_type, ref.entity_id, ref.field, ref.value, ref.note)
+            if key not in seen:
+                seen.add(key)
+                result.append(ref)
+    return result
+
+
+def generate_project_export(
+    session: Session,
+    project_id: str,
+    export_type: ProjectExportType,
+) -> ProjectExportRead:
+    project = session.get(Project, project_id)
+    if project is None:
+        raise ValueError("Project not found")
+
+    tasks = list(session.exec(select(Task).where(Task.project_id == project_id)).all())
+    risks = list(session.exec(select(Risk).where(Risk.project_id == project_id)).all())
+    action_cards = list(
+        session.exec(
+            select(ActionCard).where(ActionCard.project_id == project_id)
+        ).all()
+    )
+    proposals = list(
+        session.exec(
+            select(AssignmentProposal).where(
+                AssignmentProposal.project_id == project_id
+            )
+        ).all()
+    )
+    generated_at = datetime.now(UTC)
+    markdown = _build_project_markdown(session, project_id, export_type)
+    facts = ProjectExportFacts(
+        generated_at=generated_at,
+        metrics=get_project_metrics(session, project_id),
+        validation_results=[
+            ExportValidationFact(
+                task_id=task.id,
+                task_title=task.title,
+                result=_json_value(task.validation_result, {}),
+            )
+            for task in tasks
+            if task.task_kind == "validation" and task.validation_result
+        ],
+        evidence_refs=_collect_evidence_refs(risks, action_cards, proposals),
+    )
 
     event = AgentEvent(
         project_id=project.id,
         workspace_id=project.workspace_id,
         event_type=AgentEventType.export,
         status=AgentEventStatus.success,
-        input_snapshot=json.dumps({"project_id": project.id}, ensure_ascii=False),
-        output_snapshot=json.dumps({"markdown_length": len(markdown)}, ensure_ascii=False),
-        reasoning_summary="Generated review summary from persisted project state.",
+        input_snapshot=json.dumps(
+            {
+                "project_id": project.id,
+                "export_type": export_type.value,
+            },
+            ensure_ascii=False,
+        ),
+        output_snapshot=json.dumps(
+            {
+                "markdown_length": len(markdown),
+                "facts": facts.model_dump(mode="json"),
+            },
+            ensure_ascii=False,
+        ),
+        reasoning_summary=(
+            f"Generated {export_type.value} from persisted project state."
+        ),
         user_confirmed=False,
     )
     session.add(event)
     session.commit()
 
-    return markdown
+    return ProjectExportRead(
+        export_type=export_type,
+        markdown=markdown,
+        facts=facts,
+    )
+
+
+def generate_review_summary(session: Session, project_id: str) -> str:
+    """Compatibility adapter for the legacy review-summary endpoint."""
+    return generate_project_export(
+        session,
+        project_id,
+        ProjectExportType.review_summary,
+    ).markdown

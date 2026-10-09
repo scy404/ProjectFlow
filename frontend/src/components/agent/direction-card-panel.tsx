@@ -14,6 +14,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import type { AgentEvent, DirectionCard } from "@/lib/types";
+import { EvidenceDrawer } from "@/components/ui/evidence-drawer";
 
 type DirectionCardPanelProps = {
   directionCard?: DirectionCard | null;
@@ -172,9 +173,18 @@ export function DirectionCardPanel({
             确认项目方向后再规划任务和分工，避免后续建议偏离目标
           </p>
         </div>
-        <Badge className={confirmed ? "bg-moss/15 text-moss" : "bg-citron/35 text-ink"}>
-          {confirmed ? "已确认" : "待确认"}
-        </Badge>
+        <div className="flex items-center gap-2">
+          <EvidenceDrawer
+            reason={directionCard?.reason ?? directionCard?.source_summary ?? clarification?.reasoning_summary}
+            unknowns={safeStringList(directionCard?.unknowns)}
+            event={clarification}
+            proposalStatus={confirmed ? "confirmed" : clarification ? "pending" : null}
+            impacts={["确认后更新项目方向卡，并作为后续计划与任务拆解的输入"]}
+          />
+          <Badge className={confirmed ? "bg-moss/15 text-moss" : "bg-citron/35 text-ink"}>
+            {confirmed ? "已确认" : "待确认"}
+          </Badge>
+        </div>
       </div>
 
       <div className="mt-6 grid gap-5 min-[1900px]:grid-cols-[minmax(0,1fr)_340px]">

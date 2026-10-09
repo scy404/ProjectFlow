@@ -467,6 +467,14 @@ def test_reject_proposal_marks_rejected_no_state_mutation(client: TestClient):
     project_after = client.get(f"/api/projects/{project['id']}").json()
     assert project_after["direction_card"] is None
 
+    timeline = client.get(f"/api/projects/{project['id']}/timeline").json()
+    rejection = next(
+        event for event in timeline
+        if event["input_snapshot"].get("action") == "reject_proposal"
+    )
+    assert rejection["output_snapshot"]["decision"] == "rejected"
+    assert rejection["output_snapshot"]["project_state_changed"] is False
+
 
 def test_reject_proposal_accepts_empty_body(client: TestClient):
     workspace, project, *_ = _create_full_fixture(client)

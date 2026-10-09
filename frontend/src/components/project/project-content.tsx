@@ -48,6 +48,7 @@ import type { AgentAction } from "./project-actions";
 import type { ProjectView } from "./project-sidebar";
 import { PROJECT_TEMPLATE_LABELS } from "./project-template-options";
 import { ProjectJourneyBar } from "./project-journey-bar";
+import { OutcomeMetricsPanel } from "./outcome-metrics-panel";
 
 const VIEW_META: Record<
   ProjectView,
@@ -99,9 +100,9 @@ const VIEW_META: Record<
     description: "当前身份可见的项目决策记忆和 Markdown 导出",
   },
   retro: {
-    title: "项目复盘",
+    title: "成果复盘",
     icon: BarChart3,
-    description: "项目总结、Agent 时间线和评审导出",
+    description: "区分 AI 复盘与数据库事实，并生成项目成果",
   },
 };
 
@@ -701,11 +702,9 @@ function ViewRenderer({
     case "retro":
       return (
         <div className="space-y-6">
+          <OutcomeMetricsPanel projectId={project.id} isDemo={project.is_demo} />
           <RetroSummaryPanel
             project={project}
-            stages={stages}
-            tasks={tasks}
-            risks={risks}
             pending={Boolean(pendingAction)}
             currentUserId={currentUserId}
             onRunAgent={onRunAgent}
@@ -722,17 +721,11 @@ function ViewRenderer({
 
 function RetroSummaryPanel({
   project,
-  stages,
-  tasks,
-  risks,
   pending,
   currentUserId,
   onRunAgent,
 }: {
   project: ProjectState["project"];
-  stages: ProjectState["stages"];
-  tasks: ProjectState["tasks"];
-  risks: ProjectState["risks"];
   pending: boolean;
   currentUserId?: string;
   onRunAgent?: (action: AgentAction, thinkingLevel?: ThinkingLevel, model?: { provider: string; name: string }) => void;
@@ -763,16 +756,14 @@ function RetroSummaryPanel({
     }
   };
 
-  const doneTasks = tasks.filter(t => t.status === "done").length;
-  const totalTasks = tasks.length;
-  const openRisks = risks.filter(r => r.status === "open");
-  const completedStages = stages.filter(s => s.status === "completed").length;
-
   return (
     <>
       <section className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-bold text-ink">AI 项目复盘</h2>
+          <div>
+            <h2 className="text-lg font-bold text-ink">AI 生成复盘</h2>
+            <p className="mt-1 text-xs text-ink/50">此区域为 Agent 的叙述性总结，不作为数据库事实指标。</p>
+          </div>
           <Button
             size="sm"
             className="bg-moss text-white hover:bg-moss/85"
@@ -849,29 +840,6 @@ function RetroSummaryPanel({
         ) : null}
       </section>
 
-      <section className="grid gap-4 sm:grid-cols-3">
-        <CompactStat
-          label="任务完成"
-          value={totalTasks > 0 ? `${doneTasks}/${totalTasks}` : "0/0"}
-          trend={totalTasks > 0 ? `${Math.round(doneTasks / totalTasks * 100)}%` : "无任务"}
-          tone={doneTasks === totalTasks ? "moss" : "primary"}
-          helpText="已完成任务占总任务数的比例"
-        />
-        <CompactStat
-          label="风险解决"
-          value={risks.length > 0 ? `${risks.filter(r => r.status === "resolved").length}/${risks.length}` : "0/0"}
-          trend={risks.length === 0 ? "无风险" : openRisks.length === 0 ? "全部解决" : `${openRisks.length} 待处理`}
-          tone={openRisks.length === 0 ? "moss" : "coral"}
-          helpText="已解决风险占总风险数的比例"
-        />
-        <CompactStat
-          label="阶段完成"
-          value={stages.length > 0 ? `${completedStages}/${stages.length}` : "0/0"}
-          trend={stages.length === 0 ? "无阶段" : completedStages === stages.length ? "全部完成" : stages.find(s => s.status === "active")?.name ?? "进行中"}
-          tone={completedStages === stages.length ? "moss" : "primary"}
-          helpText="已完成阶段占总阶段数的比例"
-        />
-      </section>
     </>
   );
 }

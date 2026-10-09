@@ -1,4 +1,5 @@
 import json
+from datetime import UTC, datetime
 
 from sqlmodel import Session, select
 
@@ -61,6 +62,7 @@ def update_risk_status(session: Session, risk_id: str, status: RiskStatus) -> Ri
     if risk is None:
         raise ValueError("Risk not found")
     risk.status = status
+    risk.updated_at = datetime.now(UTC)
     session.add(risk)
     session.commit()
     session.refresh(risk)

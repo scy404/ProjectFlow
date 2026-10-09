@@ -52,6 +52,8 @@ const baseProjectState: ProjectState = {
     idea: "做一个测试项目",
     deadline: "2026-07-01",
     deliverables: "演示",
+    project_template: "general",
+    is_demo: false,
     status: "active",
     current_stage_id: "stage-1",
     direction_card: {
@@ -94,6 +96,7 @@ const baseProjectState: ProjectState = {
       estimated_hours: 8,
       dependency_ids: [],
       acceptance_criteria: [],
+      task_kind: "delivery",
       can_cut: false,
       order_index: 0,
       created_by_agent: false,

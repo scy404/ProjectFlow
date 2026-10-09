@@ -121,7 +121,7 @@ export function ActionCardItem({ card, onDismiss, onComplete, pending, canOperat
               <MultilineText text={card.reason} className="mt-0.5" />
             </div>
           )}
-          <EvidenceRefList refs={card.evidence_refs} />
+          <EvidenceRefList refs={card.evidence_refs} reason={card.reason} />
           {card.due_date && (
             <p className="mt-1 text-xs text-ink/50">
               截止：{new Date(card.due_date).toLocaleDateString("zh-CN")}

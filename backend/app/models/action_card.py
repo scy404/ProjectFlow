@@ -1,8 +1,8 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-from sqlalchemy import Column, JSON
-from sqlmodel import SQLModel, Field
+from sqlalchemy import JSON, Column
+from sqlmodel import Field, SQLModel
 
 
 class ActionCard(SQLModel, table=True):
@@ -28,5 +28,8 @@ class ActionCard(SQLModel, table=True):
     status: str = Field(default="active", index=True)  # "active" | "done" | "dismissed"
     created_by_agent: bool = Field(default=False)
     created_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc)
+        default_factory=lambda: datetime.now(UTC)
+    )
+    updated_at: datetime = Field(
+        default_factory=lambda: datetime.now(UTC)
     )

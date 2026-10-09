@@ -203,11 +203,11 @@ def test_nonempty_reason_creates_rejection_memory(client: TestClient):
     assert mem["status"] == "active"
 
 
-# ─── AC4: No AgentEvent created ──────────────────────────────────────────────
+# ─── AC4: Rejection decision is visible in timeline ─────────────────────────
 
 
-def test_rejection_does_not_create_agent_event(client: TestClient):
-    """proposal_rejected 不创建 AgentEvent，不污染 timeline。"""
+def test_rejection_creates_decision_event_without_state_change(client: TestClient):
+    """Proposal 拒绝写入决策时间线，同时明确未修改项目事实。"""
     workspace, project, owner, *_ = _create_full_fixture(client)
 
     # Create the clarify proposal first (this creates 1 AgentEvent)
@@ -230,8 +230,15 @@ def test_rejection_does_not_create_agent_event(client: TestClient):
         f"/api/projects/{project['id']}/timeline",
     ).json()
 
-    # No new AgentEvent created by the rejection itself
-    assert len(timeline_after) == len(timeline_before_reject)
+    assert len(timeline_after) == len(timeline_before_reject) + 1
+    rejection_event = next(
+        event
+        for event in timeline_after
+        if event["output_snapshot"].get("decision") == "rejected"
+    )
+    assert rejection_event["user_confirmed"] is True
+    assert rejection_event["output_snapshot"]["project_state_changed"] is False
+    assert rejection_event["output_snapshot"]["rejection_reason"] == "不合适"
 
 
 # ─── AC5: content/rationale semantics ────────────────────────────────────────

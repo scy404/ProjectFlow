@@ -18,6 +18,7 @@ const task: Task = {
   estimated_hours: 4,
   dependency_ids: [],
   acceptance_criteria: [],
+  task_kind: "delivery",
   can_cut: false,
   assignment_reason: null,
   order_index: 0,

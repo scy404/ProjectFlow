@@ -277,6 +277,38 @@ def _compact_workspace_state_json(event_type: AgentEventType, workspace_state: W
                 for task in tasks
             ],
         }
+        if event_type in {
+            AgentEventType.risk,
+            AgentEventType.replan,
+            AgentEventType.retrospective,
+        }:
+            payload["project"]["risks"] = [
+                {
+                    "id": risk.id,
+                    "task_id": risk.task_id,
+                    "severity": risk.severity,
+                    "title": risk.title,
+                    "description": risk.description,
+                    "recommendation": risk.recommendation,
+                    "evidence_refs": [ref.model_dump(mode="json") for ref in risk.evidence_refs],
+                    "status": risk.status,
+                    "updated_at": risk.updated_at.isoformat(),
+                }
+                for risk in project.risks
+            ]
+            payload["project"]["action_cards"] = [
+                {
+                    "id": card.id,
+                    "task_id": card.task_id,
+                    "title": card.title,
+                    "content": card.content,
+                    "reason": card.reason,
+                    "evidence_refs": [ref.model_dump(mode="json") for ref in card.evidence_refs],
+                    "status": card.status,
+                    "updated_at": card.updated_at.isoformat(),
+                }
+                for card in project.action_cards
+            ]
         # Include check-in data for checkin analysis so LLM can see blockers
         if event_type == AgentEventType.checkin and project.checkin_responses:
             # Build member name + task title lookup for human-readable output

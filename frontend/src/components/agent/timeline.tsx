@@ -47,6 +47,10 @@ function eventIcon(type: AgentEvent["event_type"]) {
       return <RefreshCw className="h-4 w-4" />;
     case "export":
       return <Bot className="h-4 w-4" />;
+    case "retrospective":
+      return <Lightbulb className="h-4 w-4" />;
+    case "validation":
+      return <ListChecks className="h-4 w-4" />;
     default:
       return <Bot className="h-4 w-4" />;
   }
@@ -64,6 +68,8 @@ function eventLabel(type: AgentEvent["event_type"]) {
     risk: "风险分析",
     replan: "计划调整",
     export: "导出",
+    retrospective: "项目复盘",
+    validation: "验证结果",
   };
   return labels[type];
 }
@@ -115,6 +121,10 @@ function eventClass(type: AgentEvent["event_type"]) {
       return "bg-coral/15 text-coral";
     case "export":
       return "bg-ink/8 text-ink/55";
+    case "retrospective":
+      return "bg-harbor/15 text-harbor";
+    case "validation":
+      return "bg-moss/15 text-moss";
     default:
       return "bg-ink/8 text-ink/55";
   }

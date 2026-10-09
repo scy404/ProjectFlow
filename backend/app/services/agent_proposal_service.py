@@ -3,13 +3,13 @@ from datetime import UTC, datetime
 
 from sqlmodel import Session, select
 
-from app.core.db_utils import require_row
 from app.agent.output_schemas import (
     DirectionCardOutput,
     ReplanOutput,
     StagePlanOutput,
     TaskBreakdownOutput,
 )
+from app.core.db_utils import require_row
 from app.models import (
     AgentEvent,
     AgentProposal,
@@ -19,7 +19,13 @@ from app.models import (
     User,
     WorkspaceMembership,
 )
-from app.models.enums import AgentEventType, AgentProposalStatus, ProjectStatus, RuntimeEventType, StageStatus
+from app.models.enums import (
+    AgentEventType,
+    AgentProposalStatus,
+    ProjectStatus,
+    RuntimeEventType,
+    StageStatus,
+)
 from app.schemas.agent_proposal import AgentProposalRead
 from app.schemas.runtime import AppendRequest, EventAppendItem
 from app.services.agent_runtime_service import get_agent_runtime_service
@@ -153,17 +159,23 @@ def confirm_proposal(
         project_id=proposal.project_id,
         workspace_id=proposal.workspace_id,
         event_type=AgentEventType(proposal.proposal_type),
-        input_snapshot=json.dumps({
-            "action": "confirm_proposal",
-            "proposal_id": proposal_id,
-            "source_agent_event_id": proposal.agent_event_id,
-        }, ensure_ascii=False),
-        output_snapshot=json.dumps({
-            "proposal_type": proposal.proposal_type,
-            "confirmed_by": confirmed_by,
-            "created_ids": created_ids,
-            "reason": reason,
-        }, ensure_ascii=False),
+        input_snapshot=json.dumps(
+            {
+                "action": "confirm_proposal",
+                "proposal_id": proposal_id,
+                "source_agent_event_id": proposal.agent_event_id,
+            },
+            ensure_ascii=False,
+        ),
+        output_snapshot=json.dumps(
+            {
+                "proposal_type": proposal.proposal_type,
+                "confirmed_by": confirmed_by,
+                "created_ids": created_ids,
+                "reason": reason,
+            },
+            ensure_ascii=False,
+        ),
         reasoning_summary=f"User confirmed {proposal.proposal_type} proposal {proposal_id}: {reason}",
         user_confirmed=True,
     )
@@ -193,12 +205,14 @@ def confirm_proposal(
     if memory_source_type:
         try:
             from app.services.memory_service import extract_from_event
+
             extract_from_event(
                 source_type=memory_source_type,
                 source_id=proposal.id,
             )
         except Exception:
             import logging as _logging
+
             _logging.getLogger(__name__).exception(
                 "ProjectMemory extraction failed for %s %s",
                 memory_source_type,
@@ -208,7 +222,9 @@ def confirm_proposal(
     return proposal
 
 
-def reject_proposal(session: Session, proposal_id: str, reason: str | None = None) -> AgentProposal:
+def reject_proposal(
+    session: Session, proposal_id: str, reason: str | None = None
+) -> AgentProposal:
     """Reject a pending proposal. No state mutation occurs.
 
     If reason is non-empty, ProjectMemory extraction runs after the business
@@ -222,6 +238,40 @@ def reject_proposal(session: Session, proposal_id: str, reason: str | None = Non
     proposal.status = AgentProposalStatus.rejected
     proposal.rejection_reason = reason
     session.add(proposal)
+
+    proposal_label = {
+        "clarify": "方向卡",
+        "plan": "阶段计划",
+        "breakdown": "任务拆解",
+        "replan": "重规划",
+    }.get(proposal.proposal_type, "Agent 建议")
+    rejection_event = AgentEvent(
+        project_id=proposal.project_id,
+        workspace_id=proposal.workspace_id,
+        event_type=AgentEventType(proposal.proposal_type),
+        input_snapshot=json.dumps(
+            {
+                "action": "reject_proposal",
+                "proposal_id": proposal_id,
+                "source_agent_event_id": proposal.agent_event_id,
+            },
+            ensure_ascii=False,
+        ),
+        output_snapshot=json.dumps(
+            {
+                "proposal_type": proposal.proposal_type,
+                "decision": "rejected",
+                "rejection_reason": reason,
+                "project_state_changed": False,
+            },
+            ensure_ascii=False,
+        ),
+        reasoning_summary=(
+            f"用户拒绝了{proposal_label}" + (f"：{reason}" if reason else "")
+        ),
+        user_confirmed=True,
+    )
+    session.add(rejection_event)
     _record_proposal_confirmation_runtime_events(
         session,
         proposal=proposal,
@@ -236,15 +286,21 @@ def reject_proposal(session: Session, proposal_id: str, reason: str | None = Non
     # Runs AFTER the business decision commits; failures are absorbed.
     # Does NOT create an AgentEvent.
     if reason and reason.strip():
-        _rejection_source_type = "replan_rejected" if proposal.proposal_type == "replan" else "proposal_rejected"
+        _rejection_source_type = (
+            "replan_rejected"
+            if proposal.proposal_type == "replan"
+            else "proposal_rejected"
+        )
         try:
             from app.services.memory_service import extract_from_event
+
             extract_from_event(
                 source_type=_rejection_source_type,
                 source_id=proposal.id,
             )
         except Exception:
             import logging as _logging
+
             _logging.getLogger(__name__).exception(
                 "ProjectMemory extraction failed for %s %s",
                 _rejection_source_type,
@@ -302,22 +358,32 @@ def _record_proposal_confirmation_runtime_events(
         if event_type == RuntimeEventType.proposal_confirmation_committed:
             payload["created_ids"] = created_ids or []
 
-        events.append(EventAppendItem(
-            client_event_id=f"{run_id}:{proposal.id}:{event_type.value}",
-            type=event_type,
-            ordering_hint=index,
-            payload=payload,
-            trace={
-                "run_id": run_id,
-                "conversation_id": context.get("conversation_id"),
-                "workspace_id": proposal.workspace_id,
-                "project_id": proposal.project_id,
-                "proposal_id": proposal.id,
-                **({"tool_call_id": context["tool_call_id"]} if "tool_call_id" in context else {}),
-                **({"tool_name": context["tool_name"]} if "tool_name" in context else {}),
-                "redacted": True,
-            },
-        ))
+        events.append(
+            EventAppendItem(
+                client_event_id=f"{run_id}:{proposal.id}:{event_type.value}",
+                type=event_type,
+                ordering_hint=index,
+                payload=payload,
+                trace={
+                    "run_id": run_id,
+                    "conversation_id": context.get("conversation_id"),
+                    "workspace_id": proposal.workspace_id,
+                    "project_id": proposal.project_id,
+                    "proposal_id": proposal.id,
+                    **(
+                        {"tool_call_id": context["tool_call_id"]}
+                        if "tool_call_id" in context
+                        else {}
+                    ),
+                    **(
+                        {"tool_name": context["tool_name"]}
+                        if "tool_name" in context
+                        else {}
+                    ),
+                    "redacted": True,
+                },
+            )
+        )
 
     service.append_events(
         run_id,
@@ -328,7 +394,9 @@ def _record_proposal_confirmation_runtime_events(
     )
 
 
-def _proposal_runtime_context(session: Session, proposal: AgentProposal) -> dict[str, str] | None:
+def _proposal_runtime_context(
+    session: Session, proposal: AgentProposal
+) -> dict[str, str] | None:
     source_event = session.get(AgentEvent, proposal.agent_event_id)
     if source_event is None:
         return None
@@ -397,7 +465,9 @@ def _persist_stage_plan(session: Session, proposal: AgentProposal) -> list[str]:
 
     created_ids: list[str] = []
     active_stage_id: str | None = None
-    for index, stage_item in enumerate(sorted(output.stages, key=lambda item: item.order_index)):
+    for index, stage_item in enumerate(
+        sorted(output.stages, key=lambda item: item.order_index)
+    ):
         activate_this_stage = should_activate_first and index == 0
         stage = Stage(
             project_id=proposal.project_id,
@@ -408,7 +478,9 @@ def _persist_stage_plan(session: Session, proposal: AgentProposal) -> list[str]:
             deliverable=stage_item.deliverable,
             done_criteria=json.dumps(stage_item.done_criteria, ensure_ascii=False),
             order_index=stage_item.order_index,
-            status=StageStatus.active.value if activate_this_stage else StageStatus.pending.value,
+            status=StageStatus.active.value
+            if activate_this_stage
+            else StageStatus.pending.value,
         )
         session.add(stage)
         session.flush()
@@ -435,7 +507,9 @@ def _persist_task_breakdown(session: Session, proposal: AgentProposal) -> list[s
     output = TaskBreakdownOutput.model_validate(payload)
 
     created_ids: list[str] = []
-    for task_item in sorted(output.tasks, key=lambda t: (t.order_index, t.priority, t.due_date)):
+    for task_item in sorted(
+        output.tasks, key=lambda t: (t.order_index, t.priority, t.due_date)
+    ):
         task = Task(
             project_id=proposal.project_id,
             stage_id=task_item.stage_id,
@@ -445,11 +519,17 @@ def _persist_task_breakdown(session: Session, proposal: AgentProposal) -> list[s
             due_date=task_item.due_date.isoformat(),
             estimated_hours=task_item.estimated_hours,
             dependency_ids=json.dumps(task_item.dependency_ids, ensure_ascii=False),
-            acceptance_criteria=json.dumps(task_item.acceptance_criteria, ensure_ascii=False),
+            acceptance_criteria=json.dumps(
+                task_item.acceptance_criteria, ensure_ascii=False
+            ),
             task_kind=task_item.task_kind.value,
             validation_spec=(
-                json.dumps(task_item.validation_spec.model_dump(mode="json"), ensure_ascii=False)
-                if task_item.validation_spec else None
+                json.dumps(
+                    task_item.validation_spec.model_dump(mode="json"),
+                    ensure_ascii=False,
+                )
+                if task_item.validation_spec
+                else None
             ),
             can_cut=task_item.can_cut,
             order_index=task_item.order_index,
@@ -463,8 +543,12 @@ def _persist_task_breakdown(session: Session, proposal: AgentProposal) -> list[s
 
 def _persist_replan(session: Session, proposal: AgentProposal) -> list[str]:
     """Persist replan output by delegating to replan_service.confirm_replan."""
-    from app.schemas.replan import ReplanConfirmRequest, ReplanStageAdjustment, ReplanTaskChange
     from app.schemas.action_card import ActionCardCreate
+    from app.schemas.replan import (
+        ReplanConfirmRequest,
+        ReplanStageAdjustment,
+        ReplanTaskChange,
+    )
     from app.services.replan_service import confirm_replan
 
     payload = _get_payload(proposal)
@@ -524,4 +608,8 @@ def _persist_replan(session: Session, proposal: AgentProposal) -> list[str]:
         action_cards=action_cards,
     )
     result = confirm_replan(session, request, auto_commit=False)
-    return result.applied_stage_ids + result.applied_task_ids + result.created_action_card_ids
+    return (
+        result.applied_stage_ids
+        + result.applied_task_ids
+        + result.created_action_card_ids
+    )

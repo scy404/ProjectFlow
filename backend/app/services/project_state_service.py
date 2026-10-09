@@ -143,6 +143,7 @@ def _risk_to_read(risk: Risk) -> RiskRead:
         status=risk.status,
         created_by_agent=risk.created_by_agent,
         created_at=risk.created_at,
+        updated_at=risk.updated_at,
     )
 
 

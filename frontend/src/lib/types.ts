@@ -320,6 +320,7 @@ export type Risk = {
   status: "open" | "accepted" | "ignored" | "resolved";
   created_by_agent: boolean;
   created_at: string;
+  updated_at: string;
 };
 
 // --- Action Card ---
@@ -341,6 +342,7 @@ export type ActionCard = {
   status: "active" | "done" | "dismissed";
   created_by_agent: boolean;
   created_at: string;
+  updated_at: string;
 };
 
 // --- Project Memory ---
@@ -369,7 +371,7 @@ export type AgentEvent = {
   id: string;
   project_id: string;
   workspace_id: string;
-  event_type: "clarify" | "plan" | "breakdown" | "assign" | "negotiate" | "push" | "checkin" | "risk" | "replan" | "export";
+  event_type: "clarify" | "plan" | "breakdown" | "assign" | "negotiate" | "push" | "checkin" | "risk" | "replan" | "export" | "retrospective" | "validation";
   status: "success" | "repaired" | "fallback" | "failed";
   input_snapshot: Record<string, unknown>;
   output_snapshot: Record<string, unknown>;
@@ -561,6 +563,52 @@ export type ProjectState = {
   risks: Risk[];
   action_cards: ActionCard[];
   timeline: AgentEvent[];
+};
+
+export type CountRatio = {
+  numerator: number;
+  denominator: number;
+};
+
+export type ProjectMetrics = {
+  project_id: string;
+  project_created_at: string;
+  first_confirmed_plan_at: string | null;
+  created_to_first_plan_seconds: number | null;
+  proposals_total: number;
+  proposals_confirmed: number;
+  proposals_rejected: number;
+  proposals_pending: number;
+  proposal_decision_ratio: CountRatio;
+  assignments_completed: number;
+  assignments_total: number;
+  assignment_completion_ratio: CountRatio;
+  tasks_total: number;
+  tasks_completed: number;
+  task_completion_ratio: CountRatio;
+  validation_tasks_total: number;
+  validation_tasks_with_result: number;
+  validation_conclusion_ratio: CountRatio;
+  risks_total: number;
+  action_cards_total: number;
+  calculation_notes: Record<string, string>;
+};
+
+export type ProjectExportType = "review_summary" | "opc_outcome";
+
+export type ProjectExportResult = {
+  export_type: ProjectExportType;
+  markdown: string;
+  facts: {
+    generated_at: string;
+    metrics: ProjectMetrics;
+    validation_results: Array<{
+      task_id: string;
+      task_title: string;
+      result: Record<string, unknown>;
+    }>;
+    evidence_refs: EvidenceRef[];
+  };
 };
 
 // --- UI State ---

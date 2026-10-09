@@ -11,9 +11,10 @@ import {
   DirectionDecisionView,
   type DirectionDecisionContent,
 } from "@/components/agent/direction-decision-view";
-import type { AgentProposal, AgentEvent } from "@/lib/types";
+import type { AgentProposal, AgentEvent, EvidenceRef } from "@/lib/types";
 import { MultilineText } from "@/components/ui/multiline-text";
 import { translateStatus } from "@/lib/utils";
+import { EvidenceDrawer } from "@/components/ui/evidence-drawer";
 
 const TYPE_LABELS: Record<string, string> = {
   clarify: "方向卡",
@@ -250,21 +251,40 @@ function ProposalContent({ proposal }: { proposal: AgentProposal }) {
 }
 
 /** Build a map from agent_event_id → AgentEvent status */
-function buildStatusMap(
+function buildEventMap(
   proposals: AgentProposal[],
   timeline: AgentEvent[],
-): Record<string, string> {
-  const map: Record<string, string> = {};
+): Record<string, AgentEvent> {
+  const map: Record<string, AgentEvent> = {};
   const eventById: Record<string, AgentEvent> = {};
   for (const event of timeline) {
     eventById[event.id] = event;
   }
   for (const proposal of proposals) {
     if (proposal.agent_event_id && eventById[proposal.agent_event_id]) {
-      map[proposal.id] = eventById[proposal.agent_event_id].status;
+      map[proposal.id] = eventById[proposal.agent_event_id];
     }
   }
   return map;
+}
+
+function collectEvidenceRefs(value: unknown): EvidenceRef[] {
+  if (!value || typeof value !== "object") return [];
+  if (Array.isArray(value)) return value.flatMap(collectEvidenceRefs);
+  const record = value as Record<string, unknown>;
+  const direct = Array.isArray(record.evidence_refs)
+    ? record.evidence_refs.filter((item): item is EvidenceRef => Boolean(item) && typeof item === "object")
+    : [];
+  return [...direct, ...Object.entries(record)
+    .filter(([key]) => key !== "evidence_refs")
+    .flatMap(([, item]) => collectEvidenceRefs(item))];
+}
+
+function proposalImpacts(proposal: AgentProposal): string[] {
+  if (proposal.proposal_type === "clarify") return ["更新项目方向卡"];
+  if (proposal.proposal_type === "plan") return ["更新阶段计划"];
+  if (proposal.proposal_type === "breakdown") return ["创建项目任务"];
+  return ["调整阶段或任务", "可能创建新的行动卡"];
 }
 
 function StatusBadge({ status }: { status?: string }) {
@@ -278,7 +298,7 @@ function StatusBadge({ status }: { status?: string }) {
 
 function PendingProposalItem({
   proposal,
-  status,
+  event,
   isExpanded,
   confirmingId,
   pending,
@@ -287,7 +307,7 @@ function PendingProposalItem({
   onReject,
 }: {
   proposal: AgentProposal;
-  status?: string;
+  event?: AgentEvent;
   isExpanded: boolean;
   confirmingId: string | null;
   pending?: boolean;
@@ -320,7 +340,7 @@ function PendingProposalItem({
       >
         <div className="flex items-center gap-2">
           <Badge className="bg-moss/15 text-moss">{TYPE_LABELS[proposal.proposal_type] ?? proposal.proposal_type}</Badge>
-          <StatusBadge status={status} />
+          <StatusBadge status={event?.status} />
           <span className="text-sm text-ink/60">{TYPE_DESCRIPTIONS[proposal.proposal_type]}</span>
         </div>
         {isExpanded ? <ChevronUp className="h-4 w-4 text-ink/40" /> : <ChevronDown className="h-4 w-4 text-ink/40" />}
@@ -329,6 +349,16 @@ function PendingProposalItem({
       {isExpanded && (
         <div className="border-t border-moss/15 px-4 pb-4 pt-3">
           <ProposalContent proposal={proposal} />
+          <div className="mt-3">
+            <EvidenceDrawer
+              refs={collectEvidenceRefs(proposal.payload)}
+              reason={typeof proposal.payload.reason === "string" ? proposal.payload.reason : event?.reasoning_summary}
+              unknowns={Array.isArray(proposal.payload.unknowns) ? proposal.payload.unknowns.filter((item): item is string => typeof item === "string") : []}
+              event={event}
+              proposalStatus={proposal.status}
+              impacts={proposalImpacts(proposal)}
+            />
+          </div>
           <div className="mt-4 flex items-center gap-2">
             <Button
               size="sm"
@@ -403,7 +433,7 @@ export function AgentProposalPanel({ proposals, pending, timeline = [], onConfir
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
 
   const safeProposals = proposals ?? [];
-  const statusMap = buildStatusMap(safeProposals, timeline ?? []);
+  const eventMap = buildEventMap(safeProposals, timeline ?? []);
   const pendingProposals = safeProposals.filter((p) => p.status === "pending");
   const confirmedProposals = safeProposals.filter((p) => p.status === "confirmed");
 
@@ -447,7 +477,7 @@ export function AgentProposalPanel({ proposals, pending, timeline = [], onConfir
           <PendingProposalItem
             key={proposal.id}
             proposal={proposal}
-            status={statusMap[proposal.id]}
+            event={eventMap[proposal.id]}
             isExpanded={expandedIds.has(proposal.id)}
             confirmingId={confirmingId}
             pending={pending}
@@ -467,7 +497,7 @@ export function AgentProposalPanel({ proposals, pending, timeline = [], onConfir
                 <div key={proposal.id} className="flex items-center gap-2 text-sm text-ink/45">
                   <CheckCircle className="h-3.5 w-3.5 text-moss" />
                   <Badge className="bg-ink/10 text-ink/50 text-[10px]">{TYPE_LABELS[proposal.proposal_type]}</Badge>
-                  <StatusBadge status={statusMap[proposal.id]} />
+                  <StatusBadge status={eventMap[proposal.id]?.status} />
                   <span>{new Date(proposal.confirmed_at ?? proposal.created_at).toLocaleString()}</span>
                 </div>
               ))}
