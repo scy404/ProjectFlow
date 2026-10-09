@@ -18,12 +18,25 @@ from app.agent.output_schemas import (
     ActionCardProposal,
     CheckInAnalysisOutput,
     DirectionCardOutput,
-    RiskAnalysisOutput,
     ReplanOutput,
+    RetrospectiveOutput,
+    RiskAnalysisOutput,
     StagePlanOutput,
     TaskBreakdownOutput,
 )
-from app.models import ActionCard, AgentEvent, AgentProposal, AssignmentProposal, Stage, Task, User, WorkspaceMembership
+from app.models import (
+    ActionCard,
+    AgentEvent,
+    AgentProposal,
+    AssignmentProposal,
+    Project,
+    Stage,
+    Task,
+    User,
+    Workspace,
+    WorkspaceMembership,
+)
+from app.models.agent_run_state import AgentRunV2
 from app.models.enums import (
     ActionCardStatus,
     AgentEventStatus,
@@ -33,16 +46,30 @@ from app.models.enums import (
     ToolResultStatus,
 )
 from app.schemas.action_card import ActionCardCreate
-from app.schemas.agent_proposal import AgentProposalRead
 from app.schemas.agent_conversation import AgentConversationRead
+from app.schemas.agent_proposal import AgentProposalRead
 from app.schemas.assignment import AssignmentProposalCreate, AssignmentProposalRead
-from app.schemas.checkin import CheckInCycleCreate, CheckInCycleRead, CheckInResponseCreate, CheckInResponseRead
+from app.schemas.checkin import (
+    CheckInCycleCreate,
+    CheckInCycleRead,
+    CheckInResponseCreate,
+    CheckInResponseRead,
+)
 from app.schemas.risk import RiskCreate, RiskRead
-from app.schemas.runtime import ProjectFlowToolResult, ToolError, ToolExecutionRequest, ToolLinks
+from app.schemas.runtime import (
+    ProjectFlowToolResult,
+    ToolError,
+    ToolExecutionRequest,
+    ToolLinks,
+)
 from app.schemas.workspace_state import WorkspaceStateResponse
 from app.services.action_card_service import create_action_card
 from app.services.agent_conversation_service import get_conversation
-from app.services.agent_proposal_service import create_proposal, list_proposals_by_project, to_proposal_read
+from app.services.agent_proposal_service import (
+    create_proposal,
+    list_proposals_by_project,
+    to_proposal_read,
+)
 from app.services.assignment_service import create_assignment_proposal
 from app.services.checkin_service import create_checkin_cycle, create_checkin_response
 from app.services.risk_service import create_risk
@@ -186,6 +213,9 @@ def execute_agent_tool(
         # Use the same AgentEventRead shape as the public timeline route
         data = {"items": [event_to_read(e).model_dump(mode="json") for e in events]}
         return _success(data, f"{len(events)} timeline events")
+
+    if tool_name == "retrospective":
+        return _persist_retrospective(session, request)
 
     if tool_name == "stage-plan-proposal":
         cached_proposal = _find_proposal_for_idempotency_key(
@@ -1035,6 +1065,99 @@ def _dedupe_ids(ids: list[str]) -> list[str]:
     return unique_ids
 
 
+def _persist_retrospective(
+    session: Session,
+    request: ToolExecutionRequest,
+) -> ProjectFlowToolResult:
+    """Validate and persist a structured retrospective as an auditable event only."""
+    run = session.get(AgentRunV2, request.run_id)
+    project = session.get(Project, request.project_id)
+    workspace = session.get(Workspace, request.workspace_id)
+    if (
+        run is None
+        or project is None
+        or workspace is None
+        or run.conversation_id != request.conversation_id
+        or run.project_id != request.project_id
+        or run.workspace_id != request.workspace_id
+        or project.workspace_id != request.workspace_id
+    ):
+        return _failed(
+            "RETROSPECTIVE_CONTEXT_MISMATCH",
+            "复盘运行上下文与工作区或项目不匹配。",
+            side_effect_status=SideEffectStatus.no_side_effect,
+        )
+
+    cached = _find_cached_advisory_event(
+        session,
+        workspace_id=request.workspace_id,
+        project_id=request.project_id,
+        dispatch_tool_name="retrospective",
+        idempotency_key=request.idempotency_key,
+    )
+    if cached is not None:
+        return _cached_advisory_tool_result(cached)
+
+    raw_output = request.arguments.get("output")
+    if not isinstance(raw_output, dict):
+        return ProjectFlowToolResult(
+            status=ToolResultStatus.validation_error,
+            error=ToolError(
+                code="RETROSPECTIVE_OUTPUT_REQUIRED",
+                reason="output 必须是结构化复盘对象。",
+                message="output 必须是结构化复盘对象。",
+            ),
+            side_effect_status=SideEffectStatus.no_side_effect,
+            idempotency_key=request.idempotency_key,
+            observation="复盘内容缺失或格式不正确。",
+        )
+
+    try:
+        output = RetrospectiveOutput.model_validate(raw_output)
+    except ValidationError as exc:
+        message = f"复盘内容未通过结构校验：{exc}"
+        return ProjectFlowToolResult(
+            status=ToolResultStatus.validation_error,
+            error=ToolError(code="RETROSPECTIVE_OUTPUT_INVALID", reason=message, message=message),
+            side_effect_status=SideEffectStatus.no_side_effect,
+            idempotency_key=request.idempotency_key,
+            observation=message,
+        )
+
+    event = AgentEvent(
+        project_id=request.project_id,
+        workspace_id=request.workspace_id,
+        event_type=AgentEventType.retrospective,
+        status=AgentEventStatus.success,
+        reasoning_summary=output.reason,
+    )
+    event.set_input_snapshot({
+        "tool_idempotency_key": request.idempotency_key,
+        "tool_run_id": request.run_id,
+        "conversation_id": request.conversation_id,
+        "tool_call_id": request.tool_call_id,
+        "tool_name": request.tool_name,
+        "tool_dispatch_name": "retrospective",
+    })
+    session.add(event)
+    session.flush()
+
+    result = ProjectFlowToolResult(
+        status=ToolResultStatus.success,
+        data=output.model_dump(mode="json"),
+        side_effect_status=SideEffectStatus.event_persisted,
+        idempotency_key=request.idempotency_key,
+        links=ToolLinks(agent_event_id=event.id, created_ids=[]),
+        observation="结构化项目复盘已保存到时间线。",
+    )
+    snapshot = output.model_dump(mode="json")
+    snapshot["tool_result"] = result.model_dump(mode="json")
+    event.set_output_snapshot(snapshot)
+    session.add(event)
+    session.commit()
+    return result
+
+
 # ─── Proposal tools (S8+) ─────────────────────────────────────────────────
 
 
@@ -1451,12 +1574,12 @@ def execute_tool(session: Session, request: ToolExecutionRequest) -> ProjectFlow
 
 
 __all__ = [
-    "execute_agent_tool",
-    "execute_read_only_tool",
-    "execute_assignment_recommendation",
-    "execute_tool",
-    "ToolNotFoundError",
-    "WorkspaceStateResponse",
     "AgentConversationRead",
     "AgentProposalRead",
+    "ToolNotFoundError",
+    "WorkspaceStateResponse",
+    "execute_agent_tool",
+    "execute_assignment_recommendation",
+    "execute_read_only_tool",
+    "execute_tool",
 ]

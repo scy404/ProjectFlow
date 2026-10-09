@@ -15,6 +15,7 @@ import {
   rejectAgentProposal,
   runAgentNegotiate,
   runAssignment,
+  runRetrospective,
   sendAgentConversationMessage,
   startNegotiation,
   submitValidationResult,
@@ -401,6 +402,109 @@ describe("frontend API layer", () => {
 
     // getProject + createConversation + POST /runs + GET /runs/:id + GET timeline
     expect(fetchMock).toHaveBeenCalledTimes(5);
+  });
+
+  it("uses the retrospective skill and resolves the exact persisted event id", async () => {
+    const retrospectiveOutput = {
+      project_summary: "准确事件的复盘",
+      key_achievements: ["完成闭环"],
+      challenges: [],
+      lessons_learned: ["保持证据可追溯"],
+      overall_assessment: "可继续迭代",
+      reason: "基于时间线",
+      requires_confirmation: false,
+    };
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/projects/project-1")) {
+        return jsonResponse({
+          id: "project-1",
+          workspace_id: "workspace-1",
+          name: "Demo",
+          idea: "Demo",
+          deadline: "2027-06-07",
+          deliverables: "Demo",
+          project_template: "competition",
+          is_demo: false,
+          status: "active",
+          current_stage_id: null,
+          direction_card: null,
+          created_by: "user-1",
+          created_at: "2026-10-01T00:00:00Z",
+          updated_at: "2026-10-01T00:00:00Z",
+        });
+      }
+      if (url.endsWith("/projects/project-1/agent-conversations") && init?.method === "POST") {
+        return jsonResponse({
+          id: "conv-retro",
+          workspace_id: "workspace-1",
+          project_id: "project-1",
+          creator_user_id: "user-1",
+          title: "",
+          visibility: "private",
+          status: "active",
+          summary: "",
+          current_focus: "",
+          messages: [],
+          created_at: "2026-10-09T00:00:00Z",
+          updated_at: "2026-10-09T00:00:00Z",
+        });
+      }
+      if (url.endsWith("/runs") && init?.method === "POST") {
+        const body = JSON.parse(String(init.body));
+        expect(body.runtime_config.skill).toBe("project-retrospective");
+        expect(body.viewer_user_id).toBe("user-1");
+        return jsonResponse({ run_id: "run-retro", status: "running" });
+      }
+      if (url.endsWith("/runs/run-retro")) {
+        return jsonResponse({
+          run_id: "run-retro",
+          status: "completed",
+          tool_results: [{
+            tool_name: "generate_retrospective",
+            side_effect_status: "event_persisted",
+            observation: "已保存",
+            agent_event_id: "event-exact",
+          }],
+        });
+      }
+      if (url.endsWith("/projects/project-1/timeline")) {
+        return jsonResponse([
+          {
+            id: "event-unrelated",
+            project_id: "project-1",
+            workspace_id: "workspace-1",
+            event_type: "retrospective",
+            status: "success",
+            input_snapshot: {},
+            output_snapshot: { ...retrospectiveOutput, project_summary: "错误事件" },
+            reasoning_summary: "",
+            user_confirmed: false,
+            created_at: new Date().toISOString(),
+          },
+          {
+            id: "event-exact",
+            project_id: "project-1",
+            workspace_id: "workspace-1",
+            event_type: "retrospective",
+            status: "success",
+            input_snapshot: {},
+            output_snapshot: retrospectiveOutput,
+            reasoning_summary: retrospectiveOutput.reason,
+            user_confirmed: false,
+            created_at: new Date().toISOString(),
+          },
+        ]);
+      }
+      throw new Error(`Unexpected request ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await runRetrospective("project-1", "user-1");
+
+    expect(result.event_type).toBe("retrospective");
+    expect(result.output.project_summary).toBe("准确事件的复盘");
+    expect(result.output.project_summary).not.toBe("错误事件");
   });
 
   it("calls sidecar negotiate skill with workspace_id in body", async () => {

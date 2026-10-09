@@ -4,23 +4,25 @@ from typing import Any
 
 from pydantic import BaseModel, Field, ValidationError, model_validator
 
+from app.agent.modules.common import (
+    SKILL_NAME_CN_MAP,
+    assignable_tasks,
+    blocked_assignment_task_ids,
+)
+from app.agent.modules.common import (
+    active_stage_id as resolve_active_stage_id,
+)
 from app.models.enums import (
     ActionCardType,
     AgentEventType,
     RiskSeverity,
     RiskType,
+    TaskKind,
     TaskPriority,
     TaskStatus,
-    TaskKind,
 )
 from app.schemas.evidence import EvidenceRef
 from app.schemas.task import ValidationSpec
-from app.agent.modules.common import (
-    SKILL_NAME_CN_MAP,
-    active_stage_id as resolve_active_stage_id,
-    assignable_tasks,
-    blocked_assignment_task_ids,
-)
 from app.schemas.workspace_state import WorkspaceStateResponse
 
 
@@ -259,10 +261,16 @@ class ReplanOutput(AgentOutputBase):
 
 class RetrospectiveOutput(AgentOutputBase):
     project_summary: str = Field(min_length=1, description="项目整体回顾叙事")
-    key_achievements: list[str] = Field(default_factory=list, description="关键成就")
-    challenges: list[str] = Field(default_factory=list, description="遇到的挑战和解决方式")
-    lessons_learned: list[str] = Field(default_factory=list, description="经验教训")
+    key_achievements: list[str] = Field(description="关键成就")
+    challenges: list[str] = Field(description="遇到的挑战和解决方式")
+    lessons_learned: list[str] = Field(description="经验教训")
     overall_assessment: str = Field(min_length=1, description="整体评价")
+
+    @model_validator(mode="after")
+    def forbid_confirmation(self) -> "RetrospectiveOutput":
+        if self.requires_confirmation:
+            raise ValueError("retrospective output must not require confirmation")
+        return self
 
 
 OUTPUT_SCHEMA_BY_EVENT_TYPE: dict[AgentEventType, type[AgentOutputBase]] = {

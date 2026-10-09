@@ -128,8 +128,8 @@ describe("S15 evaluation: tool evaluation matrix", () => {
   const registry = new ToolRegistry();
   registerDefaultTools(registry, createStubFastapiClient());
 
-  it("all 13 default tools are registered", () => {
-    expect(registry.size).toBe(13);
+  it("all 14 default tools are registered", () => {
+    expect(registry.size).toBe(14);
   });
 
   // Risk category → policy decision matrix
@@ -171,6 +171,7 @@ describe("S15 evaluation: tool evaluation matrix", () => {
     { toolName: "analyze_checkins_and_risks", expectedEffect: "advisory_record_create" },
     { toolName: "create_risk", expectedEffect: "advisory_record_create" },
     { toolName: "create_checkin", expectedEffect: "advisory_record_create" },
+    { toolName: "generate_retrospective", expectedEffect: "event_write" },
   ];
 
   for (const { toolName, expectedEffect } of effectMatrix) {
@@ -238,6 +239,17 @@ describe("S15 evaluation: skill → tool mapping", () => {
     for (const toolName of allowedTools) {
       expect(registry.has(toolName)).toBe(true);
     }
+  });
+
+  it("project-retrospective can only use its declared read and event-write tools", () => {
+    const registry = new ToolRegistry();
+    registerDefaultTools(registry, createStubFastapiClient());
+    const allowedTools = ["get_workspace_state", "get_timeline_slice", "generate_retrospective"];
+    for (const toolName of allowedTools) {
+      expect(registry.has(toolName)).toBe(true);
+      expect(registry.get(toolName)!.manifest.modelCallable).toBe(true);
+    }
+    expect(registry.get("generate_retrospective")!.manifest.effects.effectType).toBe("event_write");
   });
 });
 

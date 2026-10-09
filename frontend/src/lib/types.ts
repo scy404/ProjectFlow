@@ -390,6 +390,16 @@ export type AgentFlowResult = {
   proposal_id?: string | null;
 };
 
+export type RetrospectiveSummary = {
+  project_summary: string;
+  key_achievements: string[];
+  challenges: string[];
+  lessons_learned: string[];
+  overall_assessment: string;
+  reason: string;
+  requires_confirmation: false;
+};
+
 export type AgentTurnPlan = {
   response_type: "answer" | "ask_clarifying_question" | "run_module" | "revise_pending_proposal";
   selected_module?: "clarify" | "plan" | "breakdown" | "assign" | "push" | "checkin" | "risk" | "replan" | null;

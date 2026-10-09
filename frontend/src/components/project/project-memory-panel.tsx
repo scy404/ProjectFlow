@@ -13,6 +13,7 @@ import {
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { MarkdownPreview } from "@/components/ui/markdown-preview";
 import { cn } from "@/lib/utils";
 import { MultilineText } from "@/components/ui/multiline-text";
 import type { ProjectMemory } from "@/lib/types";
@@ -168,7 +169,8 @@ export function ProjectMemoryPanel({ projectId, projectName, currentUserId }: Pr
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${projectName}-项目记忆.md`;
+    const safeProjectName = projectName.replace(/[<>:"/\\|?*\u0000-\u001F]/g, "-").trim() || "项目";
+    a.download = `${safeProjectName}-项目记忆.md`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -354,9 +356,9 @@ export function ProjectMemoryPanel({ projectId, projectName, currentUserId }: Pr
               </Button>
             </div>
           </div>
-          <pre className="mt-3 max-h-96 overflow-auto rounded-md bg-neutral-50 p-4 text-xs text-neutral-700">
-            {markdown}
-          </pre>
+          <div className="custom-scrollbar mt-3 max-h-[36rem] overflow-auto rounded-xl border border-neutral-200 bg-neutral-50/60 p-5 sm:p-6">
+            <MarkdownPreview markdown={markdown} />
+          </div>
         </div>
       )}
     </section>
