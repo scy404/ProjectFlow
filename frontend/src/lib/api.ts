@@ -42,6 +42,9 @@ import type {
   RunActivityItem,
   Task,
   SubmitValidationResultRequest,
+  ProjectMetrics,
+  ProjectExportResult,
+  ProjectExportType,
 } from "./types";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api";
@@ -69,18 +72,23 @@ type BackendWorkspaceState = {
   workspace_name: string;
   members: BackendWorkspaceMember[];
 };
-type BackendRisk = Omit<Risk, "evidence"> & { evidence: unknown[] | Record<string, unknown> };
+type BackendRisk = Omit<Risk, "evidence" | "updated_at"> & {
+  evidence: unknown[] | Record<string, unknown>;
+  updated_at?: string;
+};
+type BackendActionCard = Omit<ActionCard, "updated_at"> & { updated_at?: string };
 type BackendTask = Omit<Task, "task_kind" | "validation_spec" | "validation_result"> & {
   task_kind?: Task["task_kind"];
   validation_spec?: Task["validation_spec"];
   validation_result?: Task["validation_result"];
 };
-type BackendProjectState = Omit<ProjectState, "workspace" | "project" | "projects" | "members" | "risks" | "tasks"> & {
+type BackendProjectState = Omit<ProjectState, "workspace" | "project" | "projects" | "members" | "risks" | "action_cards" | "tasks"> & {
   workspace: BackendWorkspace;
   project: BackendProject;
   projects: BackendProject[];
   members: BackendUser[];
   risks: BackendRisk[];
+  action_cards: BackendActionCard[];
   tasks: BackendTask[];
 };
 type BackendAgentConversationTurn = Omit<AgentConversationTurn, "next_suggestions" | "suggestions" | "artifacts"> & {
@@ -202,7 +210,12 @@ function normalizeRisk(risk: BackendRisk): Risk {
   return {
     ...risk,
     evidence: evidenceItems.map(normalizeEvidenceItem),
+    updated_at: risk.updated_at ?? risk.created_at,
   };
+}
+
+function normalizeActionCard(card: BackendActionCard): ActionCard {
+  return { ...card, updated_at: card.updated_at ?? card.created_at };
 }
 
 function normalizeTask(task: BackendTask): Task {
@@ -222,6 +235,7 @@ function normalizeProjectState(state: BackendProjectState): ProjectState {
     projects: state.projects.map(normalizeProject),
     members: state.members.map(normalizeUser),
     risks: state.risks.map(normalizeRisk),
+    action_cards: state.action_cards.map(normalizeActionCard),
     tasks: state.tasks.map(normalizeTask),
   };
 }
@@ -656,7 +670,8 @@ export async function listRisksByProject(projectId: string): Promise<Risk[]> {
 }
 
 export async function listActionCardsByProject(projectId: string): Promise<ActionCard[]> {
-  return request<ActionCard[]>(`/projects/${projectId}/action-cards`);
+  const cards = await request<BackendActionCard[]>(`/projects/${projectId}/action-cards`);
+  return cards.map(normalizeActionCard);
 }
 
 export async function listTimelineByProject(projectId: string): Promise<AgentEvent[]> {
@@ -1447,10 +1462,11 @@ export async function updateActionCardStatus(
   cardId: string,
   status: "done" | "dismissed",
 ): Promise<ActionCard> {
-  return request<ActionCard>(`/action-cards/${cardId}`, {
+  const card = await request<BackendActionCard>(`/action-cards/${cardId}`, {
     method: "PATCH",
     body: JSON.stringify({ status }),
   });
+  return normalizeActionCard(card);
 }
 
 export async function updateRiskStatus(
@@ -1495,6 +1511,20 @@ export async function resetDemoData(): Promise<{ status: string; deleted: Record
 }
 
 // --- Export ---
+export async function getProjectMetrics(projectId: string): Promise<ProjectMetrics> {
+  return request<ProjectMetrics>(`/projects/${projectId}/metrics`);
+}
+
+export async function generateProjectExport(
+  projectId: string,
+  exportType: ProjectExportType,
+): Promise<ProjectExportResult> {
+  return request<ProjectExportResult>(`/projects/${projectId}/exports`, {
+    method: "POST",
+    body: JSON.stringify({ export_type: exportType }),
+  });
+}
+
 export async function exportReviewSummary(projectId: string): Promise<{ markdown: string }> {
   return request<{ markdown: string }>(`/projects/${projectId}/export/review-summary`, {
     method: "POST",

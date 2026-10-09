@@ -146,7 +146,7 @@ export function RiskCard({ risk, onAccept, onIgnore, onResolve, pending }: RiskC
             </div>
           )}
 
-          <EvidenceRefList refs={risk.evidence_refs} />
+          <EvidenceRefList refs={risk.evidence_refs} reason={risk.recommendation} />
 
           {risk.recommendation && (
             <div className="mt-3 rounded-md bg-white px-3 py-2 text-sm text-ink/75">

@@ -2,6 +2,7 @@ import { Database } from "lucide-react";
 
 import type { EvidenceRef } from "@/lib/types";
 import { translateStatus } from "@/lib/utils";
+import { EvidenceDrawer } from "@/components/ui/evidence-drawer";
 
 const FIELD_LABELS: Record<string, string> = {
   skills: "技能",
@@ -20,7 +21,13 @@ function fieldLabel(field: string) {
   return FIELD_LABELS[field] ?? field.replaceAll("_", " ");
 }
 
-export function EvidenceRefList({ refs }: { refs?: EvidenceRef[] }) {
+export function EvidenceRefList({
+  refs,
+  reason,
+}: {
+  refs?: EvidenceRef[];
+  reason?: string | null;
+}) {
   if (!refs?.length) return null;
 
   return (
@@ -38,6 +45,9 @@ export function EvidenceRefList({ refs }: { refs?: EvidenceRef[] }) {
           </li>
         ))}
       </ul>
+      <div className="mt-2">
+        <EvidenceDrawer refs={refs} reason={reason} />
+      </div>
     </div>
   );
 }

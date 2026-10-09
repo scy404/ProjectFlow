@@ -3,8 +3,10 @@ from sqlmodel import Session
 
 from app.core.database import get_session
 from app.models.project import Project
-from app.schemas.project import ProjectCreate, ProjectUpdate, ProjectRead
+from app.schemas.metrics import ProjectMetricsRead
+from app.schemas.project import ProjectCreate, ProjectRead, ProjectUpdate
 from app.schemas.project_state import ProjectStateRead, ProjectStateRepairRead
+from app.services.metrics_service import get_project_metrics
 from app.services.project_service import (
     create_project,
     delete_project,
@@ -69,6 +71,17 @@ def api_get_project_state(
     if state is None:
         raise HTTPException(status_code=404, detail="Project not found")
     return state
+
+
+@router.get("/projects/{project_id}/metrics", response_model=ProjectMetricsRead)
+def api_get_project_metrics(
+    project_id: str,
+    session: Session = Depends(get_session),
+):
+    try:
+        return get_project_metrics(session, project_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.post("/projects/{project_id}/state-repair", response_model=ProjectStateRepairRead)

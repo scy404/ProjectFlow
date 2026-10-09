@@ -184,3 +184,38 @@ def test_create_db_and_tables_adds_empty_evidence_refs_to_legacy_records(monkeyp
                 f"SELECT evidence_refs FROM {table_name} WHERE id = 'legacy-{table_name}'"
             )).scalar_one()
         assert json.loads(stored) == []
+
+
+def test_migration_backfills_risk_and_action_card_updated_at(monkeypatch, tmp_path):
+    db_path = tmp_path / "legacy-updated-at.sqlite"
+    legacy_engine = create_engine(
+        f"sqlite:///{db_path}",
+        connect_args={"check_same_thread": False},
+    )
+    with legacy_engine.begin() as conn:
+        for table_name in ("risks", "action_cards"):
+            conn.execute(text(f"""
+                CREATE TABLE {table_name} (
+                    id VARCHAR NOT NULL PRIMARY KEY,
+                    created_at TIMESTAMP NOT NULL
+                )
+            """))
+            conn.execute(text(
+                f"INSERT INTO {table_name} (id, created_at) "
+                "VALUES (:id, '2026-01-02 03:04:05')"
+            ), {"id": f"legacy-{table_name}"})
+
+    monkeypatch.setattr(database, "engine", legacy_engine)
+    monkeypatch.setattr(database.settings, "database_url", f"sqlite:///{db_path}")
+
+    database._migrate_risk_action_card_timestamps()
+    database._migrate_risk_action_card_timestamps()
+
+    for table_name in ("risks", "action_cards"):
+        columns = {col["name"] for col in inspect(legacy_engine).get_columns(table_name)}
+        assert "updated_at" in columns
+        with legacy_engine.connect() as conn:
+            created_at, updated_at = conn.execute(text(
+                f"SELECT created_at, updated_at FROM {table_name}"
+            )).one()
+        assert updated_at == created_at

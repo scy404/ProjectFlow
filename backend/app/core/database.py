@@ -1,10 +1,10 @@
 import json
 
 from sqlalchemy import event, inspect, text
-from sqlmodel import SQLModel, Session, create_engine
+from sqlmodel import Session, SQLModel, create_engine
 
-from app.core.config import settings
 import app.models  # noqa: F401 — ensure all models are registered before create_all
+from app.core.config import settings
 
 connect_args = {"check_same_thread": False} if settings.database_url.startswith("sqlite") else {}
 # For SQLite, provide JSON serializer/deserializer so Column(JSON) works
@@ -142,6 +142,24 @@ def _migrate_evidence_refs() -> None:
                 conn.execute(text(
                     f"ALTER TABLE {table_name} "
                     "ADD COLUMN evidence_refs JSON NOT NULL DEFAULT '[]'"
+                ))
+        conn.commit()
+
+
+def _migrate_risk_action_card_timestamps() -> None:
+    """Add mutable-object timestamps without requiring legacy DB rebuilds."""
+    if not settings.database_url.startswith("sqlite"):
+        return
+    with engine.connect() as conn:
+        for table_name in ("risks", "action_cards"):
+            columns = _get_sqlite_columns(table_name)
+            if columns and "updated_at" not in columns:
+                conn.execute(text(
+                    f"ALTER TABLE {table_name} ADD COLUMN updated_at TIMESTAMP"
+                ))
+                source = "created_at" if "created_at" in columns else "CURRENT_TIMESTAMP"
+                conn.execute(text(
+                    f"UPDATE {table_name} SET updated_at = {source} WHERE updated_at IS NULL"
                 ))
         conn.commit()
 
@@ -286,6 +304,7 @@ def create_db_and_tables() -> None:
     _migrate_workspaces()
     _migrate_projects()
     _migrate_evidence_refs()
+    _migrate_risk_action_card_timestamps()
     _migrate_agent_runs_v2()
     _migrate_agent_runs_v2_attribution()
     _migrate_agent_conversations_multi()

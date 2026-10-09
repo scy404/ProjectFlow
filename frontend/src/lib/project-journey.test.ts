@@ -83,6 +83,7 @@ function task(status: ProjectState["tasks"][number]["status"] = "not_started", o
     estimated_hours: 8,
     dependency_ids: [],
     acceptance_criteria: ["可演示"],
+    task_kind: "delivery" as const,
     can_cut: false,
     created_by_agent: true,
     order_index: 0,
@@ -223,6 +224,7 @@ describe("deriveProjectJourney", () => {
       status: "open",
       created_by_agent: true,
       created_at: "2026-10-01T00:00:00Z",
+      updated_at: "2026-10-01T00:00:00Z",
     }];
     expect(deriveProjectJourney(riskState).currentStep).toMatchObject({
       id: "execution",

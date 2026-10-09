@@ -5,31 +5,35 @@ from enum import Enum
 from sqlmodel import Session, select
 
 from app.models import (
-    Workspace,
-    WorkspaceMembership,
-    MemberProfile,
-    User,
-    Project,
-    Stage,
-    Task,
+    ActionCard,
+    AssignmentNegotiation,
     AssignmentProposal,
     AssignmentResponse,
-    AssignmentNegotiation,
+    MemberProfile,
+    Project,
     ProjectResource,
+    Risk,
+    Stage,
+    Task,
+    User,
+    Workspace,
+    WorkspaceMembership,
 )
 from app.models.checkin import CheckInCycle, CheckInResponse
 from app.models.enums import ProjectTemplate
 from app.schemas.workspace_state import (
-    MemberState,
-    StageState,
-    TaskState,
-    CheckInCycleState,
-    CheckInResponseState,
+    ActionCardState,
+    AssignmentNegotiationState,
     AssignmentProposalState,
     AssignmentResponseState,
-    AssignmentNegotiationState,
-    ResourceState,
+    CheckInCycleState,
+    CheckInResponseState,
+    MemberState,
     ProjectState,
+    ResourceState,
+    RiskState,
+    StageState,
+    TaskState,
     WorkspaceStateResponse,
 )
 from app.services.project_service import normalize_direction_card
@@ -231,6 +235,39 @@ def get_workspace_state(
             created_at=r.created_at.isoformat(),
         ) for r in resource_rows]
 
+        risk_rows = session.exec(
+            select(Risk).where(Risk.project_id == project_row.id)
+        ).all()
+        risks = [RiskState(
+            id=r.id,
+            stage_id=r.stage_id,
+            task_id=r.task_id,
+            type=r.type.value if isinstance(r.type, Enum) else r.type,
+            severity=r.severity.value if isinstance(r.severity, Enum) else r.severity,
+            title=r.title,
+            description=r.description,
+            recommendation=r.recommendation,
+            evidence_refs=r.evidence_refs,
+            status=r.status.value if isinstance(r.status, Enum) else r.status,
+            updated_at=r.updated_at,
+        ) for r in risk_rows]
+        action_card_rows = session.exec(
+            select(ActionCard).where(ActionCard.project_id == project_row.id)
+        ).all()
+        action_cards = [ActionCardState(
+            id=card.id,
+            stage_id=card.stage_id,
+            task_id=card.task_id,
+            user_id=card.user_id,
+            type=card.type.value if isinstance(card.type, Enum) else card.type,
+            title=card.title,
+            content=card.content,
+            reason=card.reason,
+            evidence_refs=card.evidence_refs,
+            status=card.status.value if isinstance(card.status, Enum) else card.status,
+            updated_at=card.updated_at,
+        ) for card in action_card_rows]
+
         project_state = ProjectState(
             id=project_row.id, name=project_row.name, idea=project_row.idea,
             deadline=project_row.deadline,
@@ -247,6 +284,8 @@ def get_workspace_state(
             assignment_responses=assignment_responses,
             assignment_negotiations=assignment_negotiations,
             resources=resources,
+            risks=risks,
+            action_cards=action_cards,
         )
 
     # Determine current date/time with timezone awareness
@@ -256,7 +295,8 @@ def get_workspace_state(
         tz = ZoneInfo("Asia/Shanghai")
         timezone_name = "Asia/Shanghai"
     except (ImportError, KeyError, ModuleNotFoundError):
-        from datetime import timedelta, timezone as dt_tz
+        from datetime import timedelta
+        from datetime import timezone as dt_tz
         tz = dt_tz(timedelta(hours=8))
         timezone_name = "UTC+8"
     now_local = datetime.now(tz)

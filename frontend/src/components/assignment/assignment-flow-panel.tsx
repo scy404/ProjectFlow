@@ -286,7 +286,7 @@ export function AssignmentFlowPanel({
                             <MultilineText text={proposal.risk_note} />
                           </div>
                         )}
-                        <EvidenceRefList refs={proposal.evidence_refs} />
+                        <EvidenceRefList refs={proposal.evidence_refs} reason={proposal.reason} />
                       </div>
 
                       {/* Negotiation Block */}

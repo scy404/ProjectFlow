@@ -483,11 +483,37 @@ Seed/reset endpoints are open in `APP_ENV=development`. In ordinary non-developm
 ### Export
 
 ```http
+GET /api/projects/{project_id}/metrics
+POST /api/projects/{project_id}/exports
 POST /api/projects/{project_id}/export/review-summary
 ```
 
-Returns:
-Response:
+`GET /metrics` returns only database-derived facts: elapsed seconds from project creation to the first confirmed plan, proposal decision counts, assignment/task/validation numerators and denominators, plus risk and action-card counts. A missing first plan is represented as `null`; empty counts are zero.
+
+`POST /exports` accepts one of the two supported export types:
+
+```json
+{
+  "export_type": "review_summary"
+}
+```
+
+`export_type` may be `review_summary` or `opc_outcome`. The response contains the Markdown and the exact factual snapshot used for the export:
+
+```json
+{
+  "export_type": "review_summary",
+  "markdown": "# ProjectFlow 评审摘要\n...",
+  "facts": {
+    "generated_at": "2026-10-08T12:00:00Z",
+    "metrics": {},
+    "validation_results": [],
+    "evidence_refs": []
+  }
+}
+```
+
+The compatibility endpoint remains available:
 
 ```json
 {
@@ -495,7 +521,7 @@ Response:
 }
 ```
 
-Generates a review-ready Markdown summary covering product positioning, current state, risks, replanning, and next actions. The export is generated from persisted project state and logs an `export` timeline event.
+It delegates to the same `generate_project_export` service with `review_summary`; it does not maintain a second export implementation. Both paths generate content from persisted project state and log an `export` timeline event.
 
 ### Demo
 

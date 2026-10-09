@@ -4,9 +4,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session
 
 from app.core.database import get_session
-from app.schemas.risk import RiskCreate, RiskRead, RiskUpdate
-from app.services.risk_service import create_risk, list_risks_by_project, update_risk_status
 from app.models.risk import Risk
+from app.schemas.risk import RiskCreate, RiskRead, RiskUpdate
+from app.services.risk_service import (
+    create_risk,
+    list_risks_by_project,
+    update_risk_status,
+)
 
 router = APIRouter(tags=["risks"])
 
@@ -28,6 +32,7 @@ def _risk_to_read(risk: Risk) -> RiskRead:
         status=risk.status,
         created_by_agent=risk.created_by_agent,
         created_at=risk.created_at,
+        updated_at=risk.updated_at,
     )
 
 
